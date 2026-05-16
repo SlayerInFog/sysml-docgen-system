@@ -1,0 +1,56 @@
+{
+  "elements": [
+    {
+      "id": "REQ-001",
+      "type": "Requirement",
+      "name": "自动生成工程文档",
+      "documentation": "系统应能够根据 SysML 模型和文档模板自动生成工程文档。"
+    },
+    {
+      "id": "REQ-002",
+      "type": "Requirement",
+      "name": "模型数据可追溯",
+      "documentation": "生成文档应记录来源模型、模板和生成时间。"
+    },
+    {
+      "id": "BLK-001",
+      "type": "Block",
+      "name": "文档生成系统",
+      "documentation": "系统核心块，负责模型管理、模板管理和文档生成。"
+    },
+    {
+      "id": "BLK-002",
+      "type": "Block",
+      "name": "模型解析器",
+      "ownerId": "BLK-001",
+      "documentation": "解析 SysML/XMI/JSON 模型文件，抽取元素和关系。"
+    },
+    {
+      "id": "BLK-003",
+      "type": "Block",
+      "name": "文档生成器",
+      "ownerId": "BLK-001",
+      "documentation": "根据模板渲染 HTML，并导出 DOCX/PDF。"
+    },
+    {
+      "id": "ACT-001",
+      "type": "Activity",
+      "name": "文档生成流程",
+      "documentation": "选择项目、模型和模板后，系统生成文档并保存历史。"
+    },
+    {
+      "id": "REL-001",
+      "type": "Satisfy",
+      "name": "生成系统满足自动生成需求",
+      "sourceId": "BLK-001",
+      "targetId": "REQ-001"
+    },
+    {
+      "id": "REL-002",
+      "type": "Trace",
+      "name": "文档生成器追踪模型数据",
+      "sourceId": "BLK-003",
+      "targetId": "REQ-002"
+    }
+  ]
+}

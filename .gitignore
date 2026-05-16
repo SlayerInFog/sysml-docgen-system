@@ -1,0 +1,27 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+  
+dist/
+
+# Runtime files
+logs/
+backend/app/uploads/
+backend/app/generated/
+
+# Browser profiles
+.chrome-profile/
+.chrome-demo-profile/
+
+# IDE
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

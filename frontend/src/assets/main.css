@@ -1,0 +1,57 @@
+:root {
+  --bg: #f4f0e8;
+  --panel: #fffaf0;
+  --ink: #17202a;
+  --muted: #6b7280;
+  --line: #d6c7ad;
+  --brand: #0e5f66;
+  --brand-dark: #083f45;
+  --accent: #c96c3b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: "Microsoft YaHei", "PingFang SC", "Noto Serif SC", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 15% 10%, rgba(201, 108, 59, 0.16), transparent 26%),
+    linear-gradient(135deg, #f8f3e9 0%, #e7efed 100%);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 800;
+  margin: 0 0 16px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.html-preview {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 24px;
+  max-height: 600px;
+  overflow: auto;
+}
