@@ -21,6 +21,7 @@ backend/app/generated/
 
 # IDE
 .idea/
+.vscode/
 
 # OS
 .DS_Store
