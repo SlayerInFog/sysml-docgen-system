@@ -90,7 +90,10 @@
           <template #header>
             <div class="card-header">
               <span>图形化关系视图</span>
-              <span class="muted">展示 {{ graphNodes.length }} 个元素、{{ graphEdges.length }} 条关系</span>
+              <div class="graph-actions">
+                <span class="muted">展示 {{ graphNodes.length }} 个元素、{{ graphEdges.length }} 条关系</span>
+                <el-button size="small" :disabled="!selectedElement" @click="clearFocus">返回概览</el-button>
+              </div>
             </div>
           </template>
           <div class="graph-legend">
@@ -128,6 +131,7 @@
                 ]"
                 @click="focusElement(node.element)"
               >
+                <title>{{ nodeTooltip(node.element) }}</title>
                 <circle :cx="node.x" :cy="node.y" r="30" />
                 <text :x="node.x" :y="node.y - 3" text-anchor="middle">{{ compactName(node.element.name) }}</text>
                 <text :x="node.x" :y="node.y + 13" text-anchor="middle" class="node-type">{{ node.element.type }}</text>
@@ -276,6 +280,22 @@ const selectedChildUids = computed(
         : [],
     ),
 )
+const childCountByUid = computed(() => {
+  const counts = new Map<string, number>()
+  elements.value.forEach((element) => {
+    if (!element.parent_uid) return
+    counts.set(element.parent_uid, (counts.get(element.parent_uid) || 0) + 1)
+  })
+  return counts
+})
+const relationDegreeByUid = computed(() => {
+  const degrees = new Map<string, number>()
+  relations.value.forEach((relation) => {
+    degrees.set(relation.source_uid, (degrees.get(relation.source_uid) || 0) + 1)
+    degrees.set(relation.target_uid, (degrees.get(relation.target_uid) || 0) + 1)
+  })
+  return degrees
+})
 const filteredElements = computed(() => {
   const keyword = elementKeyword.value.trim().toLowerCase()
   return elements.value.filter((element) => {
@@ -313,8 +333,29 @@ const elementTree = computed(() => {
   return roots
 })
 
+const overviewGraphElements = computed(() => {
+  const picked = new Map<string, ModelElement>()
+  const add = (items: ModelElement[], limit: number) => {
+    items.slice(0, limit).forEach((element) => picked.set(element.element_uid, element))
+  }
+  const candidates = filteredElements.value
+  const roots = candidates.filter((element) => !element.parent_uid)
+  const parents = candidates
+    .filter((element) => childCountByUid.value.has(element.element_uid))
+    .sort((a, b) => (childCountByUid.value.get(b.element_uid) || 0) - (childCountByUid.value.get(a.element_uid) || 0))
+  const connected = [...candidates].sort(
+    (a, b) => (relationDegreeByUid.value.get(b.element_uid) || 0) - (relationDegreeByUid.value.get(a.element_uid) || 0),
+  )
+
+  add(roots, 10)
+  add(parents, 14)
+  add(connected, 18)
+  add(candidates, 36)
+  return Array.from(picked.values()).slice(0, 36)
+})
+
 const graphSourceElements = computed(() => {
-  if (!selectedElement.value) return filteredElements.value.slice(0, 36)
+  if (!selectedElement.value) return overviewGraphElements.value
   const relatedUids = new Set<string>([selectedElement.value.element_uid])
   if (selectedElement.value.parent_uid) relatedUids.add(selectedElement.value.parent_uid)
   selectedChildUids.value.forEach((uid) => relatedUids.add(uid))
@@ -458,6 +499,16 @@ function relationPeerName(relation: ModelRelation) {
     relation.source_uid === selectedElement.value.element_uid ? relation.target_uid : relation.source_uid
   return elementByUid.value.get(peerUid)?.name || peerUid
 }
+function clearFocus() {
+  selectedElement.value = null
+  modelTreeRef.value?.setCurrentKey()
+}
+function nodeTooltip(element: ModelElement) {
+  const childCount = childCountByUid.value.get(element.element_uid) || 0
+  const relationCount = relationDegreeByUid.value.get(element.element_uid) || 0
+  const documentation = element.documentation ? `\n说明：${element.documentation}` : '\n说明：暂无'
+  return `名称：${element.name}\n类型：${element.type}\nUID：${element.element_uid}\n父级：${element.parent_uid || '无'}\n子节点：${childCount}\n关联关系：${relationCount}${documentation}`
+}
 async function syncTreeSelection(uid: string) {
   await nextTick()
   const tree = modelTreeRef.value
@@ -535,6 +586,11 @@ onMounted(load)
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 13px;
+}
+.graph-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 .legend-dot {
   display: inline-block;
