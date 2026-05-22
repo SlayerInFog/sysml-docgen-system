@@ -59,12 +59,6 @@ sysml-docgen-system
 - MySQL 8
 - Git
 
-## 迁移说明
-
-- 本仓库已迁移到当前工作区，以下命令默认都在 `sysml-docgen-system` 根目录下执行。
-- 当前仓库内已确认存在的资料文件有 `documents/第15组软件需求规格说明V1.0.doc`、`docs/sample-sysml-model.json`、`docs/omg-sysml-20230201-profile.xmi`。
-- 交接摘要中提到的其他 `E:\sysml\...` 外部资料和设计图不在当前工作区，需要自行补回。
-
 ## 数据库配置
 
 默认数据库连接：
