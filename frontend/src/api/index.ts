@@ -51,6 +51,30 @@ export interface ModelRelation {
   label?: string
 }
 
+export interface ModelCompareItem {
+  uid: string
+  name?: string
+  type?: string
+  change_fields: string[]
+}
+
+export interface RelationCompareItem {
+  source_uid: string
+  target_uid: string
+  relation_type: string
+  label?: string
+}
+
+export interface ModelCompare {
+  base_model: SysMLModel
+  target_model: SysMLModel
+  added_elements: ModelCompareItem[]
+  removed_elements: ModelCompareItem[]
+  changed_elements: ModelCompareItem[]
+  added_relations: RelationCompareItem[]
+  removed_relations: RelationCompareItem[]
+}
+
 export interface Template {
   id: number
   project_id?: number
@@ -95,6 +119,10 @@ export const modelApi = {
   elements: (modelId: number) => http.get<ModelElement[]>(`/models/${modelId}/elements`).then((r) => r.data),
   graph: (modelId: number) =>
     http.get<{ elements: ModelElement[]; relations: ModelRelation[] }>(`/models/${modelId}/graph`).then((r) => r.data),
+  compare: (modelId: number, targetModelId: number) =>
+    http
+      .get<ModelCompare>('/models/compare', { params: { base_model_id: modelId, target_model_id: targetModelId } })
+      .then((r) => r.data),
   updateElement: (id: number, data: { name?: string; documentation?: string }) =>
     http.patch<ModelElement>(`/models/elements/${id}`, data).then((r) => r.data),
 }
@@ -116,5 +144,6 @@ export const documentApi = {
 }
 
 export const auditApi = {
-  logs: () => http.get('/audit/logs').then((r) => r.data),
+  logs: (params?: { action?: string; target_type?: string; user_id?: number; keyword?: string; limit?: number }) =>
+    http.get('/audit/logs', { params }).then((r) => r.data),
 }

@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -12,7 +13,29 @@ router = APIRouter(prefix="/audit", tags=["日志管理"])
 
 @router.get("/logs", response_model=list[AuditLogOut])
 def logs(
+    action: str | None = None,
+    target_type: str | None = None,
+    user_id: int | None = None,
+    keyword: str | None = None,
+    limit: int = Query(200, ge=1, le=1000),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ) -> list[AuditLog]:
-    return db.query(AuditLog).order_by(AuditLog.created_at.desc()).limit(200).all()
+    query = db.query(AuditLog)
+    if action:
+        query = query.filter(AuditLog.action == action)
+    if target_type:
+        query = query.filter(AuditLog.target_type == target_type)
+    if user_id:
+        query = query.filter(AuditLog.user_id == user_id)
+    if keyword:
+        pattern = f"%{keyword}%"
+        query = query.filter(
+            or_(
+                AuditLog.action.like(pattern),
+                AuditLog.target_type.like(pattern),
+                AuditLog.target_id.like(pattern),
+                AuditLog.message.like(pattern),
+            )
+        )
+    return query.order_by(AuditLog.created_at.desc()).limit(limit).all()

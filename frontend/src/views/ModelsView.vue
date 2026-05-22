@@ -20,7 +20,7 @@
 
     <el-card style="margin-top: 18px">
       <template #header>模型列表</template>
-      <el-table :data="models" stripe @row-click="selectModel">
+      <el-table :data="models" stripe highlight-current-row @row-click="selectModel">
         <el-table-column prop="name" label="模型名称" />
         <el-table-column prop="version" label="版本" width="80" />
         <el-table-column prop="source_filename" label="源文件" />
@@ -52,6 +52,91 @@
       </el-col>
     </el-row>
 
+    <el-row v-if="selected" :gutter="18" style="margin-top: 18px">
+      <el-col :span="14">
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>图形化关系视图</span>
+              <span class="muted">展示前 {{ graphNodes.length }} 个元素、{{ graphEdges.length }} 条关系</span>
+            </div>
+          </template>
+          <div class="graph-panel">
+            <svg viewBox="0 0 760 430" role="img" aria-label="模型关系图">
+              <defs>
+                <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
+                </marker>
+              </defs>
+              <line
+                v-for="edge in graphEdges"
+                :key="edge.key"
+                :x1="edge.source.x"
+                :y1="edge.source.y"
+                :x2="edge.target.x"
+                :y2="edge.target.y"
+                class="graph-edge"
+                marker-end="url(#arrow)"
+              />
+              <g v-for="node in graphNodes" :key="node.uid" class="graph-node" @click="editElement(node.element)">
+                <circle :cx="node.x" :cy="node.y" r="30" />
+                <text :x="node.x" :y="node.y - 3" text-anchor="middle">{{ compactName(node.element.name) }}</text>
+                <text :x="node.x" :y="node.y + 13" text-anchor="middle" class="node-type">{{ node.element.type }}</text>
+              </g>
+            </svg>
+            <el-empty v-if="!graphNodes.length" description="暂无可展示的模型元素" />
+          </div>
+        </el-card>
+      </el-col>
+      <el-col :span="10">
+        <el-card>
+          <template #header>模型版本对比</template>
+          <div class="compare-toolbar">
+            <el-select v-model="targetModelId" placeholder="选择对比版本" style="flex: 1">
+              <el-option
+                v-for="item in comparableModels"
+                :key="item.id"
+                :label="`${item.name} v${item.version}`"
+                :value="item.id"
+              />
+            </el-select>
+            <el-button type="primary" :disabled="!targetModelId" @click="loadCompare">对比</el-button>
+          </div>
+          <div v-if="compareResult" class="compare-result">
+            <div class="stats-grid">
+              <div><strong>{{ compareResult.added_elements.length }}</strong><span>新增元素</span></div>
+              <div><strong>{{ compareResult.removed_elements.length }}</strong><span>删除元素</span></div>
+              <div><strong>{{ compareResult.changed_elements.length }}</strong><span>变更元素</span></div>
+              <div><strong>{{ compareResult.added_relations.length + compareResult.removed_relations.length }}</strong><span>关系变化</span></div>
+            </div>
+            <el-tabs>
+              <el-tab-pane label="新增">
+                <el-table :data="compareResult.added_elements" height="210" size="small">
+                  <el-table-column prop="name" label="名称" />
+                  <el-table-column prop="type" label="类型" width="120" />
+                </el-table>
+              </el-tab-pane>
+              <el-tab-pane label="删除">
+                <el-table :data="compareResult.removed_elements" height="210" size="small">
+                  <el-table-column prop="name" label="名称" />
+                  <el-table-column prop="type" label="类型" width="120" />
+                </el-table>
+              </el-tab-pane>
+              <el-tab-pane label="变更">
+                <el-table :data="compareResult.changed_elements" height="210" size="small">
+                  <el-table-column prop="name" label="名称" />
+                  <el-table-column label="字段">
+                    <template #default="{ row }">{{ row.change_fields.join(', ') }}</template>
+                  </el-table-column>
+                </el-table>
+              </el-tab-pane>
+            </el-tabs>
+          </div>
+          <el-empty v-else description="选择同项目模型版本后可查看差异" />
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-dialog v-model="editDialog" title="轻量编辑模型元素" width="560px">
       <el-form v-if="editing" label-position="top">
         <el-form-item label="名称"><el-input v-model="editing.name" /></el-form-item>
@@ -66,10 +151,18 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { apiError } from '@/api/http'
-import { modelApi, projectApi, type ModelElement, type ModelRelation, type Project, type SysMLModel } from '@/api'
+import {
+  modelApi,
+  projectApi,
+  type ModelCompare,
+  type ModelElement,
+  type ModelRelation,
+  type Project,
+  type SysMLModel,
+} from '@/api'
 
 const projects = ref<Project[]>([])
 const models = ref<SysMLModel[]>([])
@@ -81,6 +174,40 @@ const file = ref<File | null>(null)
 const upload = reactive({ project_id: undefined as number | undefined, name: '', description: '' })
 const editDialog = ref(false)
 const editing = ref<ModelElement | null>(null)
+const targetModelId = ref<number>()
+const compareResult = ref<ModelCompare | null>(null)
+
+const graphNodes = computed(() => {
+  const centerX = 380
+  const centerY = 215
+  const radius = 150
+  const visible = elements.value.slice(0, 36)
+  return visible.map((element, index) => {
+    const angle = (2 * Math.PI * index) / Math.max(visible.length, 1)
+    return {
+      uid: element.element_uid,
+      element,
+      x: Math.round(centerX + radius * Math.cos(angle)),
+      y: Math.round(centerY + radius * Math.sin(angle)),
+    }
+  })
+})
+
+const graphEdges = computed(() => {
+  const nodeMap = new Map(graphNodes.value.map((node) => [node.uid, node]))
+  return relations.value
+    .filter((relation) => nodeMap.has(relation.source_uid) && nodeMap.has(relation.target_uid))
+    .slice(0, 80)
+    .map((relation) => ({
+      key: relation.id,
+      source: nodeMap.get(relation.source_uid)!,
+      target: nodeMap.get(relation.target_uid)!,
+    }))
+})
+
+const comparableModels = computed(() =>
+  models.value.filter((item) => item.id !== selected.value?.id && item.project_id === selected.value?.project_id),
+)
 
 function onFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0] || null
@@ -112,8 +239,11 @@ async function submit() {
 }
 async function selectModel(row: SysMLModel) {
   selected.value = row
-  elements.value = await modelApi.elements(row.id)
-  relations.value = (await modelApi.graph(row.id)).relations
+  targetModelId.value = undefined
+  compareResult.value = null
+  const graph = await modelApi.graph(row.id)
+  elements.value = graph.elements
+  relations.value = graph.relations
 }
 function editElement(row: ModelElement) {
   editing.value = { ...row }
@@ -130,6 +260,17 @@ async function saveElement() {
   editDialog.value = false
   ElMessage.success('元素已更新')
 }
+async function loadCompare() {
+  if (!selected.value || !targetModelId.value) return
+  try {
+    compareResult.value = await modelApi.compare(selected.value.id, targetModelId.value)
+  } catch (error) {
+    ElMessage.error(apiError(error, '版本对比失败'))
+  }
+}
+function compactName(value: string) {
+  return value.length > 8 ? `${value.slice(0, 7)}...` : value
+}
 onMounted(load)
 </script>
 
@@ -139,5 +280,69 @@ onMounted(load)
   grid-template-columns: repeat(4, minmax(160px, 1fr));
   gap: 12px;
   align-items: end;
+}
+.card-header,
+.compare-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+.graph-panel {
+  height: 460px;
+  overflow: hidden;
+}
+.graph-panel svg {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfb;
+}
+.graph-edge {
+  stroke: #6b7280;
+  stroke-width: 1.4;
+  opacity: 0.62;
+}
+.graph-node {
+  cursor: pointer;
+}
+.graph-node circle {
+  fill: #e7efed;
+  stroke: var(--brand);
+  stroke-width: 2;
+}
+.graph-node text {
+  fill: var(--ink);
+  font-size: 11px;
+  pointer-events: none;
+}
+.graph-node .node-type {
+  fill: var(--muted);
+  font-size: 9px;
+}
+.compare-result {
+  margin-top: 14px;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.stats-grid div {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #fff;
+}
+.stats-grid strong {
+  display: block;
+  font-size: 22px;
+  color: var(--brand-dark);
+}
+.stats-grid span {
+  color: var(--muted);
+  font-size: 13px;
 }
 </style>

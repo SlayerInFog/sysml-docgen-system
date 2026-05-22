@@ -12,7 +12,16 @@ from app.core.security import get_current_user, require_roles
 from app.models.project import Project
 from app.models.sysml import ModelElement, ModelRelation, SysMLModel
 from app.models.user import User
-from app.schemas.sysml import ModelElementOut, ModelElementUpdate, ModelGraphOut, ModelRelationOut, SysMLModelOut
+from app.schemas.sysml import (
+    ModelCompareItem,
+    ModelCompareOut,
+    ModelElementOut,
+    ModelElementUpdate,
+    ModelGraphOut,
+    ModelRelationOut,
+    RelationCompareItem,
+    SysMLModelOut,
+)
 from app.services.audit import write_log
 from app.services.sysml_parser import parse_model_file
 
@@ -104,6 +113,61 @@ def list_models(project_id: int | None = None, user: User = Depends(get_current_
     return query.order_by(SysMLModel.created_at.desc()).all()
 
 
+@router.get("/compare", response_model=ModelCompareOut)
+def compare_models(
+    base_model_id: int,
+    target_model_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ModelCompareOut:
+    base_model = ensure_model_access(db, base_model_id, user)
+    target_model = ensure_model_access(db, target_model_id, user)
+    if base_model.project_id != target_model.project_id:
+        raise HTTPException(status_code=400, detail="只能对比同一项目下的模型版本")
+
+    base_elements = {
+        item.element_uid: item for item in db.query(ModelElement).filter(ModelElement.model_id == base_model_id).all()
+    }
+    target_elements = {
+        item.element_uid: item for item in db.query(ModelElement).filter(ModelElement.model_id == target_model_id).all()
+    }
+    base_uids = set(base_elements)
+    target_uids = set(target_elements)
+
+    added_elements = [_element_compare_item(target_elements[uid]) for uid in sorted(target_uids - base_uids)]
+    removed_elements = [_element_compare_item(base_elements[uid]) for uid in sorted(base_uids - target_uids)]
+    changed_elements: list[ModelCompareItem] = []
+    for uid in sorted(base_uids & target_uids):
+        base = base_elements[uid]
+        target = target_elements[uid]
+        changed_fields = [
+            field
+            for field in ("name", "type", "documentation", "parent_uid")
+            if getattr(base, field) != getattr(target, field)
+        ]
+        if changed_fields:
+            changed_elements.append(_element_compare_item(target, changed_fields))
+
+    base_relations = {
+        (item.source_uid, item.target_uid, item.relation_type, item.label or "")
+        for item in db.query(ModelRelation).filter(ModelRelation.model_id == base_model_id).all()
+    }
+    target_relations = {
+        (item.source_uid, item.target_uid, item.relation_type, item.label or "")
+        for item in db.query(ModelRelation).filter(ModelRelation.model_id == target_model_id).all()
+    }
+
+    return ModelCompareOut(
+        base_model=SysMLModelOut.model_validate(base_model),
+        target_model=SysMLModelOut.model_validate(target_model),
+        added_elements=added_elements[:200],
+        removed_elements=removed_elements[:200],
+        changed_elements=changed_elements[:200],
+        added_relations=[_relation_compare_item(item) for item in sorted(target_relations - base_relations)[:200]],
+        removed_relations=[_relation_compare_item(item) for item in sorted(base_relations - target_relations)[:200]],
+    )
+
+
 @router.get("/{model_id}/elements", response_model=list[ModelElementOut])
 def list_elements(model_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ensure_model_access(db, model_id, user)
@@ -149,3 +213,22 @@ def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     if user.role != "admin" and model.project.owner_id != user.id:
         raise HTTPException(status_code=403, detail="权限不足")
     return model
+
+
+def _element_compare_item(element: ModelElement, change_fields: list[str] | None = None) -> ModelCompareItem:
+    return ModelCompareItem(
+        uid=element.element_uid,
+        name=element.name,
+        type=element.type,
+        change_fields=change_fields or [],
+    )
+
+
+def _relation_compare_item(relation: tuple[str, str, str, str]) -> RelationCompareItem:
+    source_uid, target_uid, relation_type, label = relation
+    return RelationCompareItem(
+        source_uid=source_uid,
+        target_uid=target_uid,
+        relation_type=relation_type,
+        label=label or None,
+    )

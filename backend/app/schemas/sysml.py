@@ -48,3 +48,27 @@ class ModelRelationOut(BaseModel):
 class ModelGraphOut(BaseModel):
     elements: list[ModelElementOut]
     relations: list[ModelRelationOut]
+
+
+class ModelCompareItem(BaseModel):
+    uid: str
+    name: str | None = None
+    type: str | None = None
+    change_fields: list[str] = []
+
+
+class RelationCompareItem(BaseModel):
+    source_uid: str
+    target_uid: str
+    relation_type: str
+    label: str | None = None
+
+
+class ModelCompareOut(BaseModel):
+    base_model: SysMLModelOut
+    target_model: SysMLModelOut
+    added_elements: list[ModelCompareItem]
+    removed_elements: list[ModelCompareItem]
+    changed_elements: list[ModelCompareItem]
+    added_relations: list[RelationCompareItem]
+    removed_relations: list[RelationCompareItem]
