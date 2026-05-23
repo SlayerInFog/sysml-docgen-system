@@ -26,9 +26,12 @@
       <template #header>模型列表</template>
       <el-table :data="models" stripe highlight-current-row @row-click="selectModel">
         <el-table-column prop="name" label="模型名称" />
+        <el-table-column prop="description" label="说明" />
         <el-table-column prop="version" label="版本" width="80" />
         <el-table-column prop="source_filename" label="源文件" />
-        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">{{ statusLabel(row.status) }}</template>
+        </el-table-column>
         <el-table-column prop="created_at" label="上传时间" />
       </el-table>
     </el-card>
@@ -555,6 +558,16 @@ function relationPeerName(relation: ModelRelation) {
   const peerUid =
     relation.source_uid === selectedElement.value.element_uid ? relation.target_uid : relation.source_uid
   return elementByUid.value.get(peerUid)?.name || peerUid
+}
+function statusLabel(status: string) {
+  return (
+    {
+      parsed: '已解析',
+      parsing: '解析中',
+      failed: '解析失败',
+      uploaded: '已上传',
+    }[status] || status
+  )
 }
 function clearFocus() {
   selectedElement.value = null
