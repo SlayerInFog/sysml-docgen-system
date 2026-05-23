@@ -2,6 +2,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
+from jinja2 import Template
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -11,7 +12,14 @@ from app.models.document import DocumentTemplate, GeneratedDocument
 from app.models.project import Project
 from app.models.sysml import SysMLModel
 from app.models.user import User
-from app.schemas.document import GenerateDocumentRequest, GeneratedDocumentOut, TemplateCreate, TemplateOut, TemplateUpdate
+from app.schemas.document import (
+    GenerateDocumentRequest,
+    GeneratedDocumentOut,
+    TemplateCreate,
+    TemplateOut,
+    TemplatePreviewRequest,
+    TemplateUpdate,
+)
 from app.services.audit import write_log
 from app.services.document_generator import (
     DEFAULT_TEMPLATE,
@@ -78,6 +86,45 @@ def update_template(
     db.refresh(template)
     write_log(db, user, "update_template", "template", template.id, template.name)
     return template
+
+
+@router.post("/templates/preview")
+def preview_template(
+    payload: TemplatePreviewRequest,
+    _: User = Depends(get_current_user),
+) -> dict[str, str]:
+    sample_model = {
+        "name": "示例 SysML 模型",
+        "version": 1,
+        "description": "用于模板预览的示例模型",
+    }
+    sample_elements = [
+        {"name": "飞控系统", "type": "Block", "documentation": "无人机飞行控制核心模块"},
+        {"name": "导航需求", "type": "Requirement", "documentation": "系统应支持自主航线导航"},
+        {"name": "传感器接口", "type": "InterfaceBlock", "documentation": "对接 GPS、IMU 等传感器数据"},
+    ]
+    sample_relations = [
+        {"source_uid": "REQ-001", "target_uid": "BLK-001", "relation_type": "satisfy", "label": "满足"},
+        {"source_uid": "BLK-001", "target_uid": "IF-001", "relation_type": "use", "label": "使用"},
+    ]
+    element_names = {
+        "REQ-001": "导航需求",
+        "BLK-001": "飞控系统",
+        "IF-001": "传感器接口",
+    }
+    html = Template(payload.content).render(
+        title=payload.title,
+        model=sample_model,
+        elements=sample_elements,
+        relations=sample_relations,
+        element_names=element_names,
+        stats={
+            "total_elements": len(sample_elements),
+            "total_relations": len(sample_relations),
+            "top_types": "Block(1)、Requirement(1)、InterfaceBlock(1)",
+        },
+    )
+    return {"html": html}
 
 
 @router.post("/generate", response_model=GeneratedDocumentOut, status_code=201)

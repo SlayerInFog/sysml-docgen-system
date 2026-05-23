@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -17,6 +19,8 @@ def logs(
     target_type: str | None = None,
     user_id: int | None = None,
     keyword: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
     limit: int = Query(200, ge=1, le=1000),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
@@ -28,6 +32,10 @@ def logs(
         query = query.filter(AuditLog.target_type == target_type)
     if user_id:
         query = query.filter(AuditLog.user_id == user_id)
+    if start_time:
+        query = query.filter(AuditLog.created_at >= start_time)
+    if end_time:
+        query = query.filter(AuditLog.created_at <= end_time)
     if keyword:
         pattern = f"%{keyword}%"
         query = query.filter(

@@ -4,17 +4,21 @@
     <el-card>
       <template #header>上传 SysML / XMI / JSON 模型</template>
       <el-form label-position="top" class="upload-form">
-        <el-form-item label="所属项目">
-          <el-select v-model="upload.project_id" placeholder="选择项目">
-            <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="模型名称"><el-input v-model="upload.name" /></el-form-item>
-        <el-form-item label="模型说明"><el-input v-model="upload.description" /></el-form-item>
-        <el-form-item label="模型文件">
-          <input type="file" accept=".xmi,.xml,.json,.uml,.sysml,.mms" @change="onFile" />
-        </el-form-item>
-        <el-button type="primary" :loading="loading" @click="submit">上传并解析</el-button>
+        <div class="upload-fields">
+          <el-form-item label="所属项目">
+            <el-select v-model="upload.project_id" placeholder="选择项目">
+              <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="模型名称"><el-input v-model="upload.name" /></el-form-item>
+          <el-form-item label="模型说明"><el-input v-model="upload.description" /></el-form-item>
+          <el-form-item label="模型文件">
+            <input class="file-input" type="file" accept=".xmi,.xml,.json,.uml,.sysml,.mms" @change="onFile" />
+          </el-form-item>
+        </div>
+        <div class="upload-actions">
+          <el-button type="primary" :loading="loading" @click="submit">上传并解析</el-button>
+        </div>
       </el-form>
     </el-card>
 
@@ -181,6 +185,8 @@
           />
         </el-select>
         <el-button type="primary" :disabled="!targetModelId" @click="loadCompare">对比</el-button>
+        <el-button :disabled="!compareResult" @click="exportCompareCsv">导出 CSV</el-button>
+        <el-button :disabled="!compareResult" @click="exportCompareHtml">导出 HTML</el-button>
       </div>
       <div v-if="compareResult" class="compare-result compare-grid">
         <div class="stats-grid">
@@ -490,6 +496,57 @@ async function loadCompare() {
     ElMessage.error(apiError(error, '版本对比失败'))
   }
 }
+function exportCompareCsv() {
+  if (!compareResult.value) return
+  const rows = [
+    ['分类', 'UID/源', '名称/目标', '类型/关系', '变更字段/标签'],
+    ...compareResult.value.added_elements.map((item) => ['新增元素', item.uid, item.name || '', item.type || '', '']),
+    ...compareResult.value.removed_elements.map((item) => ['删除元素', item.uid, item.name || '', item.type || '', '']),
+    ...compareResult.value.changed_elements.map((item) => [
+      '变更元素',
+      item.uid,
+      item.name || '',
+      item.type || '',
+      item.change_fields.join('; '),
+    ]),
+    ...compareResult.value.added_relations.map((item) => [
+      '新增关系',
+      item.source_uid,
+      item.target_uid,
+      item.relation_type,
+      item.label || '',
+    ]),
+    ...compareResult.value.removed_relations.map((item) => [
+      '删除关系',
+      item.source_uid,
+      item.target_uid,
+      item.relation_type,
+      item.label || '',
+    ]),
+  ]
+  downloadText(compareFileName('csv'), rows.map((row) => row.map(escapeCsv).join(',')).join('\n'), 'text/csv;charset=utf-8')
+}
+function exportCompareHtml() {
+  if (!compareResult.value) return
+  const result = compareResult.value
+  const section = (title: string, rows: string) => `<h2>${title}</h2><table><tbody>${rows || '<tr><td>无</td></tr>'}</tbody></table>`
+  const elementRows = (items: typeof result.added_elements) =>
+    items
+      .map(
+        (item) =>
+          `<tr><td>${escapeHtml(item.uid)}</td><td>${escapeHtml(item.name || '')}</td><td>${escapeHtml(item.type || '')}</td><td>${escapeHtml(item.change_fields.join(', '))}</td></tr>`,
+      )
+      .join('')
+  const relationRows = (items: typeof result.added_relations) =>
+    items
+      .map(
+        (item) =>
+          `<tr><td>${escapeHtml(item.source_uid)}</td><td>${escapeHtml(item.relation_type)}</td><td>${escapeHtml(item.target_uid)}</td><td>${escapeHtml(item.label || '')}</td></tr>`,
+      )
+      .join('')
+  const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>模型版本对比报告</title><style>body{font-family:Microsoft YaHei,sans-serif;line-height:1.7;color:#1f2937;padding:24px}table{border-collapse:collapse;width:100%;margin:12px 0 20px}td,th{border:1px solid #cbd5e1;padding:8px 10px}h1,h2{color:#0f172a}.meta{color:#64748b}</style></head><body><h1>模型版本对比报告</h1><p class="meta">基准：${escapeHtml(result.base_model.name)} V${result.base_model.version}；目标：${escapeHtml(result.target_model.name)} V${result.target_model.version}</p>${section('新增元素', elementRows(result.added_elements))}${section('删除元素', elementRows(result.removed_elements))}${section('变更元素', elementRows(result.changed_elements))}${section('新增关系', relationRows(result.added_relations))}${section('删除关系', relationRows(result.removed_relations))}</body></html>`
+  downloadText(compareFileName('html'), html, 'text/html;charset=utf-8')
+}
 function compactName(value: string) {
   return value.length > 8 ? `${value.slice(0, 7)}...` : value
 }
@@ -509,6 +566,35 @@ function nodeTooltip(element: ModelElement) {
   const documentation = element.documentation ? `\n说明：${element.documentation}` : '\n说明：暂无'
   return `名称：${element.name}\n类型：${element.type}\nUID：${element.element_uid}\n父级：${element.parent_uid || '无'}\n子节点：${childCount}\n关联关系：${relationCount}${documentation}`
 }
+function compareFileName(ext: 'csv' | 'html') {
+  const base = compareResult.value?.base_model.name || 'base'
+  const target = compareResult.value?.target_model.name || 'target'
+  const safe = `${base}-vs-${target}`.replace(/[^\w\u4e00-\u9fa5-]+/g, '_').slice(0, 80)
+  return `model-compare-${safe}.${ext}`
+}
+function downloadText(filename: string, content: string, type: string) {
+  const prefix = type.includes('csv') ? '\uFEFF' : ''
+  const blob = new Blob([prefix + content], { type })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+function escapeCsv(value: unknown) {
+  return `"${String(value).replace(/"/g, '""')}"`
+}
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
 async function syncTreeSelection(uid: string) {
   await nextTick()
   const tree = modelTreeRef.value
@@ -527,10 +613,31 @@ onMounted(load)
 
 <style scoped>
 .upload-form {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.upload-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(160px, 1fr));
   gap: 12px;
-  align-items: end;
+  flex: 1;
+  min-width: 0;
+}
+.upload-actions {
+  padding-bottom: 18px;
+  white-space: nowrap;
+}
+.upload-form :deep(.el-select),
+.upload-form :deep(.el-input) {
+  width: 100%;
+}
+.file-input {
+  width: 100%;
+  height: 32px;
+  padding: 4px 0;
 }
 .card-header,
 .compare-toolbar,

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -65,3 +65,16 @@ def update_project(
     db.refresh(project)
     write_log(db, user, "update_project", "project", project.id, project.name)
     return project
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    project = get_project(project_id, user, db)
+    project_name = project.name
+    db.delete(project)
+    db.commit()
+    write_log(db, user, "delete_project", "project", project_id, project_name)

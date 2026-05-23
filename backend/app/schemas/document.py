@@ -16,6 +16,11 @@ class TemplateUpdate(BaseModel):
     content: str | None = None
 
 
+class TemplatePreviewRequest(BaseModel):
+    title: str = "模板预览文档"
+    content: str
+
+
 class TemplateOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 

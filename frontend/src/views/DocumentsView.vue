@@ -4,23 +4,27 @@
     <el-card>
       <template #header>生成配置</template>
       <el-form class="generate-form" label-position="top">
-        <el-form-item label="项目">
-          <el-select v-model="form.project_id" @change="loadRelated">
-            <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="模型版本">
-          <el-select v-model="form.model_id">
-            <el-option v-for="m in models" :key="m.id" :label="`${m.name} V${m.version}`" :value="m.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="模板">
-          <el-select v-model="form.template_id">
-            <el-option v-for="t in templates" :key="t.id" :label="`${t.name} V${t.version}`" :value="t.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="文档标题"><el-input v-model="form.title" /></el-form-item>
-        <el-button type="primary" @click="generate">生成文档</el-button>
+        <div class="generate-fields">
+          <el-form-item label="项目">
+            <el-select v-model="form.project_id" @change="loadRelated">
+              <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="模型版本">
+            <el-select v-model="form.model_id">
+              <el-option v-for="m in models" :key="m.id" :label="`${m.name} V${m.version}`" :value="m.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="模板">
+            <el-select v-model="form.template_id">
+              <el-option v-for="t in templates" :key="t.id" :label="`${t.name} V${t.version}`" :value="t.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="文档标题"><el-input v-model="form.title" /></el-form-item>
+        </div>
+        <div class="generate-actions">
+          <el-button type="primary" @click="generate">生成文档</el-button>
+        </div>
       </el-form>
     </el-card>
 
@@ -112,9 +116,25 @@ onMounted(load)
 
 <style scoped>
 .generate-form {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(150px, 1fr));
+  display: flex;
   gap: 12px;
-  align-items: end;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.generate-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+.generate-actions {
+  padding-bottom: 18px;
+  white-space: nowrap;
+}
+.generate-form :deep(.el-select),
+.generate-form :deep(.el-input) {
+  width: 100%;
 }
 </style>

@@ -110,6 +110,9 @@ export const projectApi = {
   list: () => http.get<Project[]>('/projects').then((r) => r.data),
   create: (data: { name: string; code: string; description?: string }) =>
     http.post<Project>('/projects', data).then((r) => r.data),
+  update: (id: number, data: { name?: string; description?: string }) =>
+    http.patch<Project>(`/projects/${id}`, data).then((r) => r.data),
+  remove: (id: number) => http.delete(`/projects/${id}`).then((r) => r.data),
 }
 
 export const modelApi = {
@@ -133,6 +136,10 @@ export const documentApi = {
   createDefaultTemplate: () => http.post<Template>('/documents/templates/default').then((r) => r.data),
   createTemplate: (data: { project_id?: number; name: string; description?: string; content: string }) =>
     http.post<Template>('/documents/templates', data).then((r) => r.data),
+  updateTemplate: (id: number, data: { name?: string; description?: string; content?: string }) =>
+    http.patch<Template>(`/documents/templates/${id}`, data).then((r) => r.data),
+  previewTemplate: (data: { title?: string; content: string }) =>
+    http.post<{ html: string }>('/documents/templates/preview', data).then((r) => r.data),
   generate: (data: { project_id: number; model_id: number; template_id: number; title: string }) =>
     http.post<GeneratedDocument>('/documents/generate', data).then((r) => r.data),
   list: (projectId?: number) =>
@@ -144,6 +151,14 @@ export const documentApi = {
 }
 
 export const auditApi = {
-  logs: (params?: { action?: string; target_type?: string; user_id?: number; keyword?: string; limit?: number }) =>
+  logs: (params?: {
+    action?: string
+    target_type?: string
+    user_id?: number
+    keyword?: string
+    start_time?: string
+    end_time?: string
+    limit?: number
+  }) =>
     http.get('/audit/logs', { params }).then((r) => r.data),
 }

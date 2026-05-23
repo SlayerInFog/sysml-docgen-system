@@ -61,8 +61,29 @@ function logout() {
   color: #e7efed;
   border-radius: 12px;
 }
+:deep(.el-menu-item:hover),
+:deep(.el-menu-item:focus) {
+  background: #1d4b52;
+  color: #ffffff;
+}
+:deep(.el-menu-item:hover .el-icon),
+:deep(.el-menu-item:focus .el-icon) {
+  color: #ffffff;
+}
 :deep(.el-menu-item.is-active) {
   background: #f8f3e9;
+  color: var(--brand-dark);
+}
+:deep(.el-menu-item.is-active .el-icon) {
+  color: var(--brand-dark);
+}
+:deep(.el-menu-item.is-active:hover),
+:deep(.el-menu-item.is-active:focus) {
+  background: #fffaf0;
+  color: var(--brand-dark);
+}
+:deep(.el-menu-item.is-active:hover .el-icon),
+:deep(.el-menu-item.is-active:focus .el-icon) {
   color: var(--brand-dark);
 }
 .header {
