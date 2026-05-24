@@ -41,10 +41,58 @@ a {
 
 .toolbar {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 16px;
+}
+
+.table-actions,
+.table-export-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.table-actions {
+  gap: 6px;
+}
+
+.table-export-actions {
+  gap: 8px;
+}
+
+.table-actions .el-button,
+.table-export-actions .el-button {
+  margin-left: 0;
+}
+
+.table-actions .el-button.is-text {
+  padding: 0 2px;
+}
+
+.table-actions-cell .cell {
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.el-dialog__footer,
+.filter-actions,
+.generate-actions,
+.upload-actions,
+.member-add,
+.compare-toolbar {
+  gap: 8px;
+}
+
+.el-dialog__footer .el-button + .el-button,
+.filter-actions .el-button + .el-button,
+.generate-actions .el-button + .el-button,
+.upload-actions .el-button + .el-button,
+.member-add .el-button + .el-button,
+.compare-toolbar .el-button + .el-button {
+  margin-left: 0;
 }
 
 .html-preview {

@@ -33,6 +33,19 @@ class TemplateOut(BaseModel):
     created_at: datetime
 
 
+class TemplateVersionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+
+    id: int
+    template_id: int
+    version: int
+    name: str
+    description: str | None
+    content: str
+    created_by: int | None
+    created_at: datetime
+
+
 class GenerateDocumentRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 

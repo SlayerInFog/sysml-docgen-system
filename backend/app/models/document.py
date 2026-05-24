@@ -21,6 +21,23 @@ class DocumentTemplate(Base):
 
     project = relationship("Project", back_populates="templates")
     documents = relationship("GeneratedDocument", back_populates="template")
+    versions = relationship("DocumentTemplateVersion", back_populates="template", cascade="all, delete-orphan")
+
+
+class DocumentTemplateVersion(Base):
+    __tablename__ = "document_template_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    template_id: Mapped[int] = mapped_column(ForeignKey("document_templates.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, index=True)
+    name: Mapped[str] = mapped_column(String(160), index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content: Mapped[str] = mapped_column(LONGTEXT().with_variant(Text, "sqlite"))
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    template = relationship("DocumentTemplate", back_populates="versions")
+    created_by_user = relationship("User")
 
 
 class GeneratedDocument(Base):

@@ -20,5 +20,6 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     projects = relationship("Project", back_populates="owner")
+    project_memberships = relationship("ProjectMember", back_populates="user", cascade="all, delete-orphan")
     uploaded_models = relationship("SysMLModel", back_populates="uploaded_by_user")
     generated_documents = relationship("GeneratedDocument", back_populates="created_by_user")

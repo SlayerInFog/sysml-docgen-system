@@ -27,7 +27,6 @@
             <el-form-item label="密码" prop="password"><el-input v-model="registerForm.password" type="password" show-password /></el-form-item>
             <el-form-item label="角色" prop="role">
               <el-select v-model="registerForm.role" class="wide">
-                <el-option label="管理员" value="admin" />
                 <el-option label="编辑者" value="author" />
                 <el-option label="读者" value="reader" />
               </el-select>

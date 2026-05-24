@@ -7,12 +7,27 @@
         <el-table-column prop="username" label="用户名" width="140" />
         <el-table-column prop="full_name" label="姓名" width="140" />
         <el-table-column prop="email" label="邮箱" />
-        <el-table-column label="角色" width="110">
-          <template #default="{ row }">{{ roleLabel(row.role) }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="角色" width="150">
           <template #default="{ row }">
-            <el-tag :type="row.is_active ? 'success' : 'info'">{{ row.is_active ? '启用' : '停用' }}</el-tag>
+            <el-select
+              v-model="row.role"
+              size="small"
+              :disabled="savingUserId === row.id || row.id === auth.user?.id"
+              @change="updateUser(row, { role: row.role })"
+            >
+              <el-option label="管理员" value="admin" disabled />
+              <el-option label="编辑者" value="author" />
+              <el-option label="阅读者" value="reader" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="启用" width="100">
+          <template #default="{ row }">
+            <el-switch
+              v-model="row.is_active"
+              :disabled="savingUserId === row.id || row.id === auth.user?.id"
+              @change="updateUser(row, { is_active: row.is_active })"
+            />
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="注册时间" width="210" />
@@ -74,7 +89,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { apiError } from '@/api/http'
 import { auditApi, authApi, type User } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 
 interface AuditLog {
   id: number
@@ -88,6 +105,8 @@ interface AuditLog {
 
 const logs = ref<AuditLog[]>([])
 const users = ref<User[]>([])
+const savingUserId = ref<number>()
+const auth = useAuthStore()
 const filters = reactive({
   action: '',
   target_type: '',
@@ -112,8 +131,30 @@ async function loadLogs() {
     limit: filters.limit,
   })
 }
+
 async function loadUsers() {
   users.value = await authApi.users()
+}
+
+async function updateUser(user: User, data: { role?: User['role']; is_active?: boolean }) {
+  if (user.id === auth.user?.id && (data.role !== undefined || data.is_active === false)) {
+    ElMessage.warning('不能修改当前登录管理员的角色或停用当前账号')
+    await loadUsers()
+    return
+  }
+  const previous = await authApi.users()
+  savingUserId.value = user.id
+  try {
+    const updated = await authApi.updateUser(user.id, data)
+    const index = users.value.findIndex((item) => item.id === updated.id)
+    if (index >= 0) users.value[index] = updated
+    ElMessage.success('用户已更新')
+  } catch (error) {
+    users.value = previous
+    ElMessage.error(apiError(error, '更新失败'))
+  } finally {
+    savingUserId.value = undefined
+  }
 }
 
 function resetFilters() {
@@ -154,9 +195,6 @@ function exportCsv() {
 function escapeCsv(value: unknown) {
   const text = String(value).replace(/"/g, '""')
   return `"${text}"`
-}
-function roleLabel(role: User['role']) {
-  return { admin: '管理员', author: '编辑者', reader: '读者' }[role]
 }
 
 onMounted(() => {

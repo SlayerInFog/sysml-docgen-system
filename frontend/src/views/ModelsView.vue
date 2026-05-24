@@ -55,9 +55,11 @@
             <el-table-column prop="name" label="名称" />
             <el-table-column prop="type" label="类型" width="140" />
             <el-table-column prop="documentation" label="说明" />
-            <el-table-column label="操作" width="90">
+            <el-table-column label="操作" width="90" class-name="table-actions-cell">
               <template #default="{ row }">
-                <el-button text type="primary" @click.stop="editElement(row)">编辑</el-button>
+                <div class="table-actions">
+                  <el-button text type="primary" @click.stop="editElement(row)">编辑</el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -187,9 +189,11 @@
             :value="item.id"
           />
         </el-select>
-        <el-button type="primary" :disabled="!targetModelId" @click="loadCompare">对比</el-button>
-        <el-button :disabled="!compareResult" @click="exportCompareCsv">导出 CSV</el-button>
-        <el-button :disabled="!compareResult" @click="exportCompareHtml">导出 HTML</el-button>
+        <div class="table-export-actions">
+          <el-button type="primary" :disabled="!targetModelId" @click="loadCompare">对比</el-button>
+          <el-button :disabled="!compareResult" @click="exportCompareCsv">导出 CSV</el-button>
+          <el-button :disabled="!compareResult" @click="exportCompareHtml">导出 HTML</el-button>
+        </div>
       </div>
       <div v-if="compareResult" class="compare-result compare-grid">
         <div class="stats-grid">

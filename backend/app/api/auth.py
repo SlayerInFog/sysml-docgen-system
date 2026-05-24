@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import create_access_token, get_current_user, hash_password, require_roles, verify_password
 from app.models.user import User
-from app.schemas.auth import TokenOut, UserCreate, UserLogin, UserOut
+from app.schemas.auth import TokenOut, UserCreate, UserLogin, UserOut, UserUpdate
 from app.services.audit import write_log
 
 router = APIRouter(prefix="/auth", tags=["认证"])
@@ -12,8 +12,8 @@ router = APIRouter(prefix="/auth", tags=["认证"])
 
 @router.post("/register", response_model=UserOut, status_code=201)
 def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
-    if payload.role not in {"admin", "author", "reader"}:
-        raise HTTPException(status_code=400, detail="角色只能是 admin、author 或 reader")
+    if payload.role not in {"author", "reader"}:
+        raise HTTPException(status_code=400, detail="自助注册只能选择 author 或 reader")
     exists = db.query(User).filter((User.username == payload.username) | (User.email == payload.email)).first()
     if exists:
         raise HTTPException(status_code=400, detail="用户名或邮箱已存在")
@@ -54,3 +54,37 @@ def users(
     db: Session = Depends(get_db),
 ) -> list[User]:
     return db.query(User).order_by(User.created_at.desc()).all()
+
+
+@router.get("/users/options", response_model=list[UserOut])
+def user_options(
+    _: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[User]:
+    return db.query(User).filter(User.is_active.is_(True)).order_by(User.username.asc()).all()
+
+
+@router.patch("/users/{user_id}", response_model=UserOut)
+def update_user(
+    user_id: int,
+    payload: UserUpdate,
+    admin: User = Depends(require_roles("admin")),
+    db: Session = Depends(get_db),
+) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if payload.role is not None:
+        if user.id == admin.id:
+            raise HTTPException(status_code=400, detail="Cannot change the current admin role")
+        if payload.role not in {"author", "reader"}:
+            raise HTTPException(status_code=400, detail="Role updates only support author or reader")
+        user.role = payload.role
+    if payload.is_active is not None:
+        if user.id == admin.id and not payload.is_active:
+            raise HTTPException(status_code=400, detail="Cannot disable the current admin account")
+        user.is_active = payload.is_active
+    db.commit()
+    db.refresh(user)
+    write_log(db, admin, "update_user", "user", user.id, f"{user.username}:{user.role}:{user.is_active}")
+    return user

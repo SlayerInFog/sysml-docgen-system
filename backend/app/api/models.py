@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
-from app.models.project import Project
+from app.api.projects import has_project_role
+from app.models.project import Project, ProjectMember
 from app.models.sysml import ModelElement, ModelRelation, SysMLModel
 from app.models.user import User
 from app.schemas.sysml import (
@@ -41,7 +42,7 @@ def upload_model(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="项目不存在")
-    if user.role != "admin" and project.owner_id != user.id:
+    if not has_project_role(db, project.id, user, {"manager", "editor"}):
         raise HTTPException(status_code=403, detail="权限不足")
 
     suffix = Path(file.filename or "model.xmi").suffix or ".xmi"
@@ -109,7 +110,9 @@ def list_models(project_id: int | None = None, user: User = Depends(get_current_
     if project_id:
         query = query.filter(SysMLModel.project_id == project_id)
     if user.role != "admin":
-        query = query.filter(Project.owner_id == user.id)
+        query = query.outerjoin(ProjectMember).filter(
+            (Project.owner_id == user.id) | (ProjectMember.user_id == user.id)
+        )
     return query.order_by(SysMLModel.created_at.desc()).all()
 
 
@@ -195,7 +198,9 @@ def update_element(
     element = db.query(ModelElement).filter(ModelElement.id == element_id).first()
     if not element:
         raise HTTPException(status_code=404, detail="模型元素不存在")
-    ensure_model_access(db, element.model_id, user)
+    model = ensure_model_access(db, element.model_id, user)
+    if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
+        raise HTTPException(status_code=403, detail="Permission denied")
     if payload.name is not None:
         element.name = payload.name[:255]
     if payload.documentation is not None:
@@ -210,7 +215,7 @@ def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     model = db.query(SysMLModel).join(Project).filter(SysMLModel.id == model_id).first()
     if not model:
         raise HTTPException(status_code=404, detail="模型不存在")
-    if user.role != "admin" and model.project.owner_id != user.id:
+    if not has_project_role(db, model.project_id, user):
         raise HTTPException(status_code=403, detail="权限不足")
     return model
 

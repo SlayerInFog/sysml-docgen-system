@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from jinja2 import Template
 from sqlalchemy.orm import Session
@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
-from app.models.document import DocumentTemplate, GeneratedDocument
-from app.models.project import Project
+from app.api.projects import has_project_role
+from app.models.document import DocumentTemplate, DocumentTemplateVersion, GeneratedDocument
+from app.models.project import Project, ProjectMember
 from app.models.sysml import SysMLModel
 from app.models.user import User
 from app.schemas.document import (
@@ -19,6 +20,7 @@ from app.schemas.document import (
     TemplateOut,
     TemplatePreviewRequest,
     TemplateUpdate,
+    TemplateVersionOut,
 )
 from app.services.audit import write_log
 from app.services.document_generator import (
@@ -42,7 +44,7 @@ def create_template(
         project = db.query(Project).filter(Project.id == payload.project_id).first()
         if not project:
             raise HTTPException(status_code=404, detail="项目不存在")
-        if user.role != "admin" and project.owner_id != user.id:
+        if not has_project_role(db, project.id, user, {"manager", "editor"}):
             raise HTTPException(status_code=403, detail="权限不足")
     template = DocumentTemplate(
         project_id=payload.project_id,
@@ -51,6 +53,8 @@ def create_template(
         content=payload.content,
     )
     db.add(template)
+    db.flush()
+    _save_template_version(db, template, user)
     db.commit()
     db.refresh(template)
     write_log(db, user, "create_template", "template", template.id, template.name)
@@ -72,19 +76,86 @@ def update_template(
     user: User = Depends(require_roles("admin", "author")),
     db: Session = Depends(get_db),
 ) -> DocumentTemplate:
-    template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
+    template = _get_template_for_write(db, template_id, user)
     if not template:
         raise HTTPException(status_code=404, detail="模板不存在")
+    changed_content = payload.content is not None and payload.content != template.content
+    changed_metadata = (
+        (payload.name is not None and payload.name != template.name)
+        or (payload.description is not None and payload.description != template.description)
+    )
+    next_version = template.version
+    if changed_content or changed_metadata:
+        next_version = template.version + 1
     if payload.name is not None:
         template.name = payload.name
     if payload.description is not None:
         template.description = payload.description
     if payload.content is not None:
         template.content = payload.content
-        template.version += 1
+    if changed_content or changed_metadata:
+        template.version = next_version
+        _save_template_version(db, template, user)
     db.commit()
     db.refresh(template)
     write_log(db, user, "update_template", "template", template.id, template.name)
+    return template
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_template(
+    template_id: int,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> None:
+    template = _get_template_for_write(db, template_id, user)
+    used_count = db.query(GeneratedDocument).filter(GeneratedDocument.template_id == template_id).count()
+    if used_count:
+        raise HTTPException(status_code=400, detail="模板已被生成文档引用，不能删除")
+    template_name = template.name
+    db.delete(template)
+    db.commit()
+    write_log(db, user, "delete_template", "template", template_id, template_name)
+
+
+@router.get("/templates/{template_id}/versions", response_model=list[TemplateVersionOut])
+def list_template_versions(
+    template_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[DocumentTemplateVersion]:
+    template = _get_template_for_read(db, template_id, user)
+    return (
+        db.query(DocumentTemplateVersion)
+        .filter(DocumentTemplateVersion.template_id == template.id)
+        .order_by(DocumentTemplateVersion.version.desc())
+        .all()
+    )
+
+
+@router.post("/templates/{template_id}/rollback/{version_id}", response_model=TemplateOut)
+def rollback_template(
+    template_id: int,
+    version_id: int,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> DocumentTemplate:
+    template = _get_template_for_write(db, template_id, user)
+    version = (
+        db.query(DocumentTemplateVersion)
+        .filter(DocumentTemplateVersion.id == version_id, DocumentTemplateVersion.template_id == template.id)
+        .first()
+    )
+    if not version:
+        raise HTTPException(status_code=404, detail="Template version not found")
+    template.name = version.name
+    template.description = version.description
+    template.content = version.content
+    template.version += 1
+    _save_template_version(db, template, user)
+    db.commit()
+    db.refresh(template)
+    write_log(db, user, "rollback_template", "template", template.id, f"rollback_to:{version.version}")
     return template
 
 
@@ -138,7 +209,7 @@ def generate_document(
     template = db.query(DocumentTemplate).filter(DocumentTemplate.id == payload.template_id).first()
     if not project or not model or not template:
         raise HTTPException(status_code=404, detail="项目、模型或模板不存在")
-    if user.role != "admin" and project.owner_id != user.id:
+    if not has_project_role(db, project.id, user, {"manager", "editor"}):
         raise HTTPException(status_code=403, detail="权限不足")
 
     html = render_document_html(db, model, payload.title, template.content)
@@ -168,7 +239,9 @@ def list_generated(project_id: int | None = None, user: User = Depends(get_curre
     if project_id:
         query = query.filter(GeneratedDocument.project_id == project_id)
     if user.role != "admin":
-        query = query.filter(Project.owner_id == user.id)
+        query = query.outerjoin(ProjectMember).filter(
+            (Project.owner_id == user.id) | (ProjectMember.user_id == user.id)
+        )
     return query.order_by(GeneratedDocument.created_at.desc()).all()
 
 
@@ -177,9 +250,26 @@ def get_generated(document_id: int, user: User = Depends(get_current_user), db: 
     doc = db.query(GeneratedDocument).join(Project).filter(GeneratedDocument.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="文档不存在")
-    if user.role != "admin" and doc.project.owner_id != user.id:
+    if not has_project_role(db, doc.project_id, user):
         raise HTTPException(status_code=403, detail="权限不足")
     return doc
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_generated(document_id: int, user: User = Depends(require_roles("admin", "author")), db: Session = Depends(get_db)) -> None:
+    doc = get_generated(document_id, user, db)
+    if not has_project_role(db, doc.project_id, user, {"manager", "editor"}):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    file_path = Path(doc.file_path) if doc.file_path else None
+    doc_title = doc.title
+    db.delete(doc)
+    db.commit()
+    if file_path and file_path.exists():
+        try:
+            file_path.unlink()
+        except OSError:
+            pass
+    write_log(db, user, "delete_document", "document", document_id, doc_title)
 
 
 @router.get("/{document_id}/export/{fmt}")
@@ -216,7 +306,47 @@ def create_default_template(
         content=DEFAULT_TEMPLATE,
     )
     db.add(template)
+    db.flush()
+    _save_template_version(db, template, user)
     db.commit()
     db.refresh(template)
     write_log(db, user, "create_default_template", "template", template.id, template.name)
     return template
+
+
+def _get_template_for_read(db: Session, template_id: int, user: User) -> DocumentTemplate:
+    template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if template.project_id and not has_project_role(db, template.project_id, user):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    return template
+
+
+def _get_template_for_write(db: Session, template_id: int, user: User) -> DocumentTemplate:
+    template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if template.project_id and not has_project_role(db, template.project_id, user, {"manager", "editor"}):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    return template
+
+
+def _save_template_version(db: Session, template: DocumentTemplate, user: User) -> None:
+    exists = (
+        db.query(DocumentTemplateVersion)
+        .filter(DocumentTemplateVersion.template_id == template.id, DocumentTemplateVersion.version == template.version)
+        .first()
+    )
+    if exists:
+        return
+    db.add(
+        DocumentTemplateVersion(
+            template_id=template.id,
+            version=template.version,
+            name=template.name,
+            description=template.description,
+            content=template.content,
+            created_by=user.id,
+        )
+    )

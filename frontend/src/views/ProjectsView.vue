@@ -7,13 +7,16 @@
     </div>
     <el-table :data="projects" stripe>
       <el-table-column prop="name" label="项目名称" />
-      <el-table-column prop="code" label="项目编码" />
+      <el-table-column prop="code" label="项目编码" width="180" />
       <el-table-column prop="description" label="说明" />
-      <el-table-column prop="created_at" label="创建时间" />
-      <el-table-column label="操作" width="160">
+      <el-table-column prop="created_at" label="创建时间" width="210" />
+      <el-table-column label="操作" width="250" class-name="table-actions-cell">
         <template #default="{ row }">
-          <el-button text type="primary" @click="edit(row)">编辑</el-button>
-          <el-button text type="danger" @click="remove(row)">删除</el-button>
+          <div class="table-actions">
+            <el-button text type="primary" @click="edit(row)">编辑</el-button>
+            <el-button text type="primary" @click="openMembers(row)">成员</el-button>
+            <el-button text type="danger" @click="remove(row)">删除</el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -21,7 +24,9 @@
     <el-dialog v-model="dialog" :title="editingId ? '编辑项目' : '新建项目'" width="520px" @closed="resetForm">
       <el-form label-position="top">
         <el-form-item label="项目名称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="项目编码"><el-input v-model="form.code" :disabled="Boolean(editingId)" placeholder="例如 UAV-DOC-001" /></el-form-item>
+        <el-form-item label="项目编码">
+          <el-input v-model="form.code" :disabled="Boolean(editingId)" placeholder="例如 UAV-DOC-001" />
+        </el-form-item>
         <el-form-item label="说明"><el-input v-model="form.description" type="textarea" /></el-form-item>
       </el-form>
       <template #footer>
@@ -29,27 +34,90 @@
         <el-button type="primary" @click="save">{{ editingId ? '保存' : '创建' }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="membersDialog" :title="membersTitle" width="760px" @closed="resetMemberForm">
+      <el-form class="member-form" label-position="top">
+        <el-form-item label="用户">
+          <el-select v-model="memberForm.user_id" filterable placeholder="选择启用中的用户">
+            <el-option
+              v-for="user in availableUsers"
+              :key="user.id"
+              :label="`${user.username}${user.full_name ? ` (${user.full_name})` : ''}`"
+              :value="user.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="项目角色">
+          <el-select v-model="memberForm.role">
+            <el-option label="管理者" value="manager" />
+            <el-option label="编辑者" value="editor" />
+            <el-option label="查看者" value="viewer" />
+          </el-select>
+        </el-form-item>
+        <el-form-item class="member-add">
+          <el-button type="primary" @click="addMember">添加成员</el-button>
+        </el-form-item>
+      </el-form>
+
+      <el-table :data="members" stripe>
+        <el-table-column prop="username" label="用户名" width="140" />
+        <el-table-column prop="full_name" label="姓名" width="140" />
+        <el-table-column prop="email" label="邮箱" />
+        <el-table-column label="项目角色" width="170">
+          <template #default="{ row }">
+            <el-tag v-if="row.role === 'owner'" type="warning">负责人</el-tag>
+            <el-select v-else v-model="row.role" size="small" @change="updateMember(row)">
+              <el-option label="管理者" value="manager" />
+              <el-option label="编辑者" value="editor" />
+              <el-option label="查看者" value="viewer" />
+            </el-select>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="100" class-name="table-actions-cell">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button v-if="row.role !== 'owner'" text type="danger" @click="removeMember(row)">移除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError } from '@/api/http'
-import { projectApi, type Project } from '@/api'
+import { authApi, projectApi, type Project, type ProjectMember, type User } from '@/api'
+
+type EditableProjectRole = 'manager' | 'editor' | 'viewer'
 
 const projects = ref<Project[]>([])
+const users = ref<User[]>([])
+const members = ref<ProjectMember[]>([])
 const dialog = ref(false)
+const membersDialog = ref(false)
 const editingId = ref<number>()
+const selectedProject = ref<Project>()
 const form = reactive({ name: '', code: '', description: '' })
+const memberForm = reactive<{ user_id?: number; role: EditableProjectRole }>({ user_id: undefined, role: 'viewer' })
+
+const membersTitle = computed(() => (selectedProject.value ? `项目成员：${selectedProject.value.name}` : '项目成员'))
+const availableUsers = computed(() => {
+  const memberUserIds = new Set(members.value.map((item) => item.user_id))
+  return users.value.filter((user) => !memberUserIds.has(user.id))
+})
 
 async function load() {
   projects.value = await projectApi.list()
 }
+
 function openCreate() {
   resetForm()
   dialog.value = true
 }
+
 function edit(project: Project) {
   editingId.value = project.id
   Object.assign(form, {
@@ -59,14 +127,17 @@ function edit(project: Project) {
   })
   dialog.value = true
 }
+
 function resetForm() {
   editingId.value = undefined
   Object.assign(form, { name: '', code: '', description: '' })
 }
+
 function cancelDialog() {
   dialog.value = false
   resetForm()
 }
+
 async function save() {
   try {
     if (editingId.value) {
@@ -83,11 +154,14 @@ async function save() {
     ElMessage.error(apiError(error, '保存失败'))
   }
 }
+
 async function remove(project: Project) {
   try {
-    await ElMessageBox.confirm(`删除项目「${project.name}」会同时删除其模型、模板和生成文档，是否继续？`, '确认删除', {
-      type: 'warning',
-    })
+    await ElMessageBox.confirm(
+      `删除项目“${project.name}”会同时删除其模型、模板和生成文档，是否继续？`,
+      '确认删除',
+      { type: 'warning' },
+    )
     await projectApi.remove(project.id)
     ElMessage.success('项目已删除')
     await load()
@@ -97,5 +171,94 @@ async function remove(project: Project) {
     }
   }
 }
+
+async function openMembers(project: Project) {
+  selectedProject.value = project
+  membersDialog.value = true
+  resetMemberForm()
+  await Promise.all([loadMembers(project.id), loadUserOptions()])
+}
+
+async function loadMembers(projectId: number) {
+  members.value = await projectApi.members(projectId)
+}
+
+async function loadUserOptions() {
+  users.value = await authApi.userOptions()
+}
+
+function resetMemberForm() {
+  Object.assign(memberForm, { user_id: undefined, role: 'viewer' as EditableProjectRole })
+}
+
+async function addMember() {
+  if (!selectedProject.value || !memberForm.user_id) {
+    ElMessage.warning('请先选择用户')
+    return
+  }
+  try {
+    await projectApi.addMember(selectedProject.value.id, {
+      user_id: memberForm.user_id,
+      role: memberForm.role,
+    })
+    ElMessage.success('成员已添加')
+    resetMemberForm()
+    await loadMembers(selectedProject.value.id)
+  } catch (error) {
+    ElMessage.error(apiError(error, '添加成员失败'))
+  }
+}
+
+async function updateMember(member: ProjectMember) {
+  if (!selectedProject.value || member.role === 'owner') return
+  try {
+    const updated = await projectApi.updateMember(selectedProject.value.id, member.id, { role: member.role })
+    const index = members.value.findIndex((item) => item.id === updated.id)
+    if (index >= 0) members.value[index] = updated
+    ElMessage.success('成员已更新')
+  } catch (error) {
+    ElMessage.error(apiError(error, '更新成员失败'))
+    await loadMembers(selectedProject.value.id)
+  }
+}
+
+async function removeMember(member: ProjectMember) {
+  if (!selectedProject.value) return
+  try {
+    await ElMessageBox.confirm(`从项目中移除“${member.username}”？`, '确认移除', { type: 'warning' })
+    await projectApi.removeMember(selectedProject.value.id, member.id)
+    ElMessage.success('成员已移除')
+    await loadMembers(selectedProject.value.id)
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(apiError(error, '移除成员失败'))
+    }
+  }
+}
+
 onMounted(load)
 </script>
+
+<style scoped>
+.member-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) 180px auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+}
+.member-form :deep(.el-select) {
+  width: 100%;
+}
+.member-add {
+  margin-bottom: 18px;
+}
+@media (max-width: 760px) {
+  .member-form {
+    grid-template-columns: 1fr;
+  }
+  .member-add {
+    margin-bottom: 0;
+  }
+}
+</style>

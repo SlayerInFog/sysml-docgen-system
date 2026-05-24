@@ -20,6 +20,17 @@ export interface Project {
   updated_at: string
 }
 
+export interface ProjectMember {
+  id: number
+  project_id: number
+  user_id: number
+  username: string
+  full_name?: string
+  email: string
+  role: 'owner' | 'manager' | 'editor' | 'viewer'
+  created_at: string
+}
+
 export interface SysMLModel {
   id: number
   project_id: number
@@ -85,6 +96,17 @@ export interface Template {
   created_at: string
 }
 
+export interface TemplateVersion {
+  id: number
+  template_id: number
+  version: number
+  name: string
+  description?: string
+  content: string
+  created_by?: number
+  created_at: string
+}
+
 export interface GeneratedDocument {
   id: number
   project_id: number
@@ -104,6 +126,9 @@ export const authApi = {
     http.post<{ access_token: string; token_type: string; user: User }>('/auth/login', data).then((r) => r.data),
   me: () => http.get<User>('/auth/me').then((r) => r.data),
   users: () => http.get<User[]>('/auth/users').then((r) => r.data),
+  userOptions: () => http.get<User[]>('/auth/users/options').then((r) => r.data),
+  updateUser: (id: number, data: { role?: User['role']; is_active?: boolean }) =>
+    http.patch<User>(`/auth/users/${id}`, data).then((r) => r.data),
 }
 
 export const projectApi = {
@@ -113,6 +138,13 @@ export const projectApi = {
   update: (id: number, data: { name?: string; description?: string }) =>
     http.patch<Project>(`/projects/${id}`, data).then((r) => r.data),
   remove: (id: number) => http.delete(`/projects/${id}`).then((r) => r.data),
+  members: (id: number) => http.get<ProjectMember[]>(`/projects/${id}/members`).then((r) => r.data),
+  addMember: (id: number, data: { user_id: number; role: 'manager' | 'editor' | 'viewer' }) =>
+    http.post<ProjectMember>(`/projects/${id}/members`, data).then((r) => r.data),
+  updateMember: (projectId: number, memberId: number, data: { role: 'manager' | 'editor' | 'viewer' }) =>
+    http.patch<ProjectMember>(`/projects/${projectId}/members/${memberId}`, data).then((r) => r.data),
+  removeMember: (projectId: number, memberId: number) =>
+    http.delete(`/projects/${projectId}/members/${memberId}`).then((r) => r.data),
 }
 
 export const modelApi = {
@@ -137,7 +169,12 @@ export const documentApi = {
   createTemplate: (data: { project_id?: number; name: string; description?: string; content: string }) =>
     http.post<Template>('/documents/templates', data).then((r) => r.data),
   updateTemplate: (id: number, data: { name?: string; description?: string; content?: string }) =>
-    http.patch<Template>(`/documents/templates/${id}`, data).then((r) => r.data),
+    http.patch<Template>(`/documents/templates/${id}`, data, { timeout: 60000 }).then((r) => r.data),
+  removeTemplate: (id: number) => http.delete(`/documents/templates/${id}`).then((r) => r.data),
+  templateVersions: (id: number) =>
+    http.get<TemplateVersion[]>(`/documents/templates/${id}/versions`).then((r) => r.data),
+  rollbackTemplate: (templateId: number, versionId: number) =>
+    http.post<Template>(`/documents/templates/${templateId}/rollback/${versionId}`).then((r) => r.data),
   previewTemplate: (data: { title?: string; content: string }) =>
     http.post<{ html: string }>('/documents/templates/preview', data).then((r) => r.data),
   generate: (data: { project_id: number; model_id: number; template_id: number; title: string }) =>
@@ -145,6 +182,7 @@ export const documentApi = {
   list: (projectId?: number) =>
     http.get<GeneratedDocument[]>('/documents', { params: projectId ? { project_id: projectId } : {} }).then((r) => r.data),
   detail: (id: number) => http.get<GeneratedDocument>(`/documents/${id}`).then((r) => r.data),
+  remove: (id: number) => http.delete(`/documents/${id}`).then((r) => r.data),
   export: (id: number, fmt: 'html' | 'docx' | 'pdf') =>
     http.get<Blob>(`/documents/${id}/export/${fmt}`, { responseType: 'blob' }).then((r) => r.data),
   exportUrl: (id: number, fmt: 'html' | 'docx' | 'pdf') => `/api/documents/${id}/export/${fmt}`,
