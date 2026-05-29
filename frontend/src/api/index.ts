@@ -271,6 +271,9 @@ export const versioningApi = {
     source_model_id?: number
     source_template_id?: number
   }) => http.post<VersionBranch>('/versioning/branches', data).then((r) => r.data),
+  updateBranch: (id: number, data: { name?: string; description?: string }) =>
+    http.patch<VersionBranch>(`/versioning/branches/${id}`, data).then((r) => r.data),
+  deleteBranch: (id: number) => http.delete(`/versioning/branches/${id}`).then((r) => r.data),
   tags: (params: { item_type: VersionItemType; project_id?: number; branch_id?: number }) =>
     http.get<VersionTag[]>('/versioning/tags', { params }).then((r) => r.data),
   createTag: (data: {

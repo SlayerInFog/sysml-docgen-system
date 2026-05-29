@@ -1,7 +1,7 @@
 import json
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.models.versioning import VersionBranch, VersionRollbackRecord, VersionT
 from app.schemas.versioning import (
     VersionBranchCreate,
     VersionBranchOut,
+    VersionBranchUpdate,
     VersionRollbackCreate,
     VersionRollbackRecordOut,
     VersionTagCreate,
@@ -51,6 +52,8 @@ def create_branch(
 ) -> VersionBranch:
     item_type = normalize_item_type(payload.item_type)
     project_id = payload.project_id
+    branch_name = normalize_branch_name(payload.name)
+    source_model = None
     head_model_id = None
     head_template_id = None
 
@@ -62,7 +65,7 @@ def create_branch(
             model = ensure_model_access(db, payload.source_model_id, user)
             if model.project_id != project_id:
                 raise HTTPException(status_code=400, detail="来源模型不属于所选项目")
-            head_model_id = model.id
+            source_model = model
     else:
         if project_id is not None:
             ensure_project_access(db, project_id, user, write=True)
@@ -72,21 +75,78 @@ def create_branch(
                 raise HTTPException(status_code=400, detail="来源模板不属于所选范围")
             head_template_id = template.id
 
-    ensure_unique_name(db, VersionBranch, item_type, project_id, payload.name, "该范围下已存在同名分支")
+    ensure_unique_name(db, VersionBranch, item_type, project_id, branch_name, "该范围下已存在同名分支")
     branch = VersionBranch(
         project_id=project_id,
         item_type=item_type,
-        name=payload.name,
+        name=branch_name,
         description=payload.description,
         head_model_id=head_model_id,
         head_template_id=head_template_id,
         created_by=user.id,
     )
     db.add(branch)
+    db.flush()
+    if source_model is not None:
+        new_model = clone_model_version(db, source_model, user, branch.name, "branch")
+        branch.head_model_id = new_model.id
     db.commit()
     db.refresh(branch)
     write_log(db, user, "create_version_branch", f"{item_type}_branch", branch.id, branch.name)
     return branch
+
+
+@router.patch("/branches/{branch_id}", response_model=VersionBranchOut)
+def update_branch(
+    branch_id: int,
+    payload: VersionBranchUpdate,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> VersionBranch:
+    branch = ensure_branch_access(db, branch_id, user, write=True)
+    old_name = branch.name
+    next_name = normalize_branch_name(payload.name) if payload.name is not None else branch.name
+    if next_name != branch.name:
+        ensure_unique_name(db, VersionBranch, branch.item_type, branch.project_id, next_name, "该范围下已存在同名分支")
+        branch.name = next_name
+        if branch.item_type == "model" and branch.project_id is not None:
+            (
+                db.query(SysMLModel)
+                .filter(SysMLModel.project_id == branch.project_id, SysMLModel.branch_name == old_name)
+                .update({SysMLModel.branch_name: next_name}, synchronize_session=False)
+            )
+    if payload.description is not None:
+        branch.description = payload.description
+    db.commit()
+    db.refresh(branch)
+    write_log(db, user, "update_version_branch", f"{branch.item_type}_branch", branch.id, branch.name)
+    return branch
+
+
+@router.delete("/branches/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_branch(
+    branch_id: int,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> None:
+    branch = ensure_branch_access(db, branch_id, user, write=True)
+    if branch.head_model_id or branch.head_template_id:
+        raise HTTPException(status_code=400, detail="分支仍有当前版本，不能删除")
+    if db.query(VersionTag).filter(VersionTag.branch_id == branch.id).first():
+        raise HTTPException(status_code=400, detail="分支仍有关联标签，不能删除")
+    if db.query(VersionRollbackRecord).filter(VersionRollbackRecord.branch_id == branch.id).first():
+        raise HTTPException(status_code=400, detail="分支仍有回滚记录，不能删除")
+    if branch.item_type == "model" and branch.project_id is not None:
+        has_models = (
+            db.query(SysMLModel)
+            .filter(SysMLModel.project_id == branch.project_id, SysMLModel.branch_name == branch.name)
+            .first()
+        )
+        if has_models:
+            raise HTTPException(status_code=400, detail="分支仍有模型版本，不能删除")
+    db.delete(branch)
+    db.commit()
+    write_log(db, user, "delete_version_branch", f"{branch.item_type}_branch", branch_id, branch.name)
 
 
 @router.get("/tags", response_model=list[VersionTagOut])
@@ -132,10 +192,14 @@ def create_tag(
     if item_type == "model":
         if project_id is None or not payload.model_id:
             raise HTTPException(status_code=400, detail="模型标签必须选择项目和模型")
+        if branch is None:
+            raise HTTPException(status_code=400, detail="模型标签必须选择分支")
         ensure_project_access(db, project_id, user, write=True)
         model = ensure_model_access(db, payload.model_id, user)
         if model.project_id != project_id:
             raise HTTPException(status_code=400, detail="标签目标模型不属于所选项目")
+        if branch and model.branch_name != branch.name:
+            raise HTTPException(status_code=400, detail="标签目标模型不属于所选分支")
         model_id = model.id
     else:
         if project_id is not None:
@@ -207,7 +271,7 @@ def rollback(
         target_model = ensure_model_access(db, target_model_id, user)
         if target_model.project_id != payload.project_id:
             raise HTTPException(status_code=400, detail="回滚目标模型不属于所选项目")
-        new_model = clone_model_version(db, target_model, user)
+        new_model = clone_model_version(db, target_model, user, branch.name)
         branch.head_model_id = new_model.id
     else:
         target_template_id = tag.template_id if tag else payload.target_template_id
@@ -258,13 +322,20 @@ def list_rollback_records(
     return query.order_by(VersionRollbackRecord.created_at.desc()).all()
 
 
-def clone_model_version(db: Session, target_model: SysMLModel, user: User) -> SysMLModel:
+def clone_model_version(
+    db: Session,
+    target_model: SysMLModel,
+    user: User,
+    branch_name: str,
+    status: str = "rollback",
+) -> SysMLModel:
+    target_branch = (branch_name or "main").strip() or "main"
     latest = (
         db.query(SysMLModel)
         .filter(
             SysMLModel.project_id == target_model.project_id,
             SysMLModel.name == target_model.name,
-            SysMLModel.branch_name == target_model.branch_name,
+            SysMLModel.branch_name == target_branch,
         )
         .order_by(SysMLModel.version.desc())
         .first()
@@ -275,11 +346,11 @@ def clone_model_version(db: Session, target_model: SysMLModel, user: User) -> Sy
         description=target_model.description,
         source_filename=f"rollback-{target_model.source_filename}"[:255],
         stored_path=target_model.stored_path,
-        version=(latest.version + 1) if latest else target_model.version + 1,
-        branch_name=target_model.branch_name,
+        version=(latest.version + 1) if latest else 1,
+        branch_name=target_branch,
         version_tag=None,
         uploaded_by=user.id,
-        status="rollback",
+        status=status,
     )
     db.add(new_model)
     db.flush()
@@ -343,6 +414,13 @@ def normalize_item_type(item_type: str) -> VersionItemType:
     if item_type not in {"model", "template"}:
         raise HTTPException(status_code=400, detail="版本对象类型只支持 model 或 template")
     return item_type  # type: ignore[return-value]
+
+
+def normalize_branch_name(name: str | None) -> str:
+    normalized = (name or "").strip()[:120]
+    if not normalized:
+        raise HTTPException(status_code=400, detail="分支名称不能为空")
+    return normalized
 
 
 def ensure_unique_name(

@@ -28,6 +28,7 @@ from app.schemas.sysml import (
 )
 from app.services.audit import write_log
 from app.services.sysml_parser import parse_model_file
+from app.services.versioning import reassign_model_branch_heads_before_delete, sync_model_branch_head
 
 router = APIRouter(prefix="/models", tags=["模型管理"])
 settings = get_settings()
@@ -110,6 +111,7 @@ def upload_model(
                 label=relation.label,
             )
         )
+    sync_model_branch_head(db, model, user)
     db.commit()
     db.refresh(model)
     write_log(db, user, "upload_model", "model", model.id, f"解析元素 {len(parsed.elements)} 个")
@@ -162,6 +164,7 @@ def delete_model(
         raise HTTPException(status_code=400, detail="Model has generated documents and cannot be deleted")
     stored_path = Path(model.stored_path) if model.stored_path else None
     model_name = model.name
+    reassign_model_branch_heads_before_delete(db, model)
     _delete_model_versioning_records(db, model.id)
     db.delete(model)
     db.commit()
@@ -320,11 +323,6 @@ def _delete_model_versioning_records(db: Session, model_id: int) -> None:
     if "version_tags" in inspector.get_table_names():
         db.execute(
             text("DELETE FROM version_tags WHERE model_id = :model_id"),
-            {"model_id": model_id},
-        )
-    if "version_branches" in inspector.get_table_names():
-        db.execute(
-            text("DELETE FROM version_branches WHERE head_model_id = :model_id"),
             {"model_id": model_id},
         )
     if "version_rollback_records" in inspector.get_table_names():

@@ -216,10 +216,12 @@
             <el-table-column label="当前模型">
               <template #default="{ row }">{{ modelLabel(row.head_model) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="130" class-name="table-actions-cell">
+            <el-table-column label="操作" width="210" class-name="table-actions-cell">
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button text type="primary" @click.stop="prepareTag(row)">打标签</el-button>
+                  <el-button text type="primary" @click.stop="renameBranch(row)">重命名</el-button>
+                  <el-button text type="danger" @click.stop="deleteBranch(row)">删除</el-button>
                 </div>
               </template>
             </el-table-column>
@@ -230,7 +232,7 @@
           <div class="version-form">
             <el-input v-model="tagForm.name" placeholder="标签名称，如 baseline-v1" />
             <el-select v-model="tagForm.model_id" clearable placeholder="目标模型">
-              <el-option v-for="model in versionModels" :key="model.id" :label="modelVersionLabel(model)" :value="model.id" />
+              <el-option v-for="model in tagTargetModels" :key="model.id" :label="modelVersionLabel(model)" :value="model.id" />
             </el-select>
             <el-button @click="createTag">创建</el-button>
           </div>
@@ -722,6 +724,11 @@ const comparableModels = computed(() =>
   models.value.filter((item) => item.id !== selected.value?.id && item.project_id === selected.value?.project_id),
 )
 const versionModels = computed(() => models.value.filter((item) => item.project_id === versionProjectId.value))
+const tagTargetModels = computed(() => {
+  const branch = branches.value.find((item) => item.id === tagForm.branch_id)
+  if (!branch) return versionModels.value
+  return versionModels.value.filter((model) => model.branch_name === branch.name)
+})
 
 function onFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0] || null
@@ -894,6 +901,7 @@ async function createBranch() {
     })
     ElMessage.success('模型分支已创建')
     Object.assign(branchForm, { name: '', source_model_id: undefined })
+    models.value = await modelApi.list()
     await loadModelVersioning()
   } catch (error) {
     ElMessage.error(apiError(error, '创建分支失败'))
@@ -903,6 +911,9 @@ async function createBranch() {
 function selectBranch(row: VersionBranch) {
   rollbackForm.branch_id = row.id
   tagForm.branch_id = row.id
+  if (tagForm.model_id && !tagTargetModels.value.some((model) => model.id === tagForm.model_id)) {
+    tagForm.model_id = undefined
+  }
 }
 
 function prepareTag(row: VersionBranch) {
@@ -910,9 +921,57 @@ function prepareTag(row: VersionBranch) {
   tagForm.model_id = row.head_model_id
 }
 
+async function renameBranch(row: VersionBranch) {
+  try {
+    const result = await ElMessageBox.prompt('请输入新的分支名称', '重命名分支', {
+      inputValue: row.name,
+      inputPattern: /\S+/,
+      inputErrorMessage: '分支名称不能为空',
+    })
+    const name = result.value.trim()
+    if (!name || name === row.name) return
+    await versioningApi.updateBranch(row.id, { name })
+    ElMessage.success('分支已重命名')
+    models.value = await modelApi.list()
+    await loadModelVersioning()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(apiError(error, '重命名分支失败'))
+    }
+  }
+}
+
+async function deleteBranch(row: VersionBranch) {
+  try {
+    await ElMessageBox.confirm(`删除分支“${row.name}”？仅没有模型版本、标签和回滚记录的空分支可删除。`, '确认删除', { type: 'warning' })
+    await versioningApi.deleteBranch(row.id)
+    ElMessage.success('分支已删除')
+    if (tagForm.branch_id === row.id) {
+      tagForm.branch_id = undefined
+      tagForm.model_id = undefined
+    }
+    if (rollbackForm.branch_id === row.id) {
+      rollbackForm.branch_id = undefined
+    }
+    await loadModelVersioning()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(apiError(error, '删除分支失败'))
+    }
+  }
+}
+
 async function createTag() {
   if (!versionProjectId.value || !tagForm.name.trim() || !tagForm.model_id) {
     ElMessage.warning('请填写标签名称并选择目标模型')
+    return
+  }
+  const targetModel = versionModels.value.find((model) => model.id === tagForm.model_id)
+  if (!tagForm.branch_id && targetModel) {
+    tagForm.branch_id = branches.value.find((branch) => branch.name === targetModel.branch_name)?.id
+  }
+  if (!tagForm.branch_id) {
+    ElMessage.warning('请先选择分支或点击分支行的打标签')
     return
   }
   try {

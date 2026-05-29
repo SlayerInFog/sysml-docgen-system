@@ -17,6 +17,13 @@ class VersionBranchCreate(BaseModel):
     source_template_id: int | None = None
 
 
+class VersionBranchUpdate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    name: str | None = None
+    description: str | None = None
+
+
 class VersionTagCreate(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 

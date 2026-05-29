@@ -28,6 +28,7 @@ from app.services.openmbee_client import (
     extract_mms_relations,
     normalize_mms_element,
 )
+from app.services.versioning import sync_model_branch_head
 
 router = APIRouter(prefix="/openmbee", tags=["OpenMBEE接口适配"])
 
@@ -229,6 +230,7 @@ def import_mms_model(
         )
         relation_count += 1
 
+    sync_model_branch_head(db, model, user)
     db.commit()
     db.refresh(model)
     write_log(db, user, "import_openmbee_model", "model", model.id, model.name)
