@@ -249,7 +249,7 @@
         <div class="version-panel">
           <h3>回滚</h3>
           <div class="version-form rollback-form">
-            <el-select v-model="rollbackForm.branch_id" clearable placeholder="目标分支">
+            <el-select v-model="rollbackForm.branch_id" clearable placeholder="目标分支" @change="resetInvalidRollbackTargets">
               <el-option v-for="branch in branches" :key="branch.id" :label="branch.name" :value="branch.id" />
             </el-select>
             <el-radio-group v-model="rollbackMode">
@@ -257,10 +257,10 @@
               <el-radio-button label="model">模型</el-radio-button>
             </el-radio-group>
             <el-select v-if="rollbackMode === 'tag'" v-model="rollbackForm.tag_id" clearable placeholder="目标标签">
-              <el-option v-for="tag in tags" :key="tag.id" :label="`${tag.name}：${modelLabel(tag.model)}`" :value="tag.id" />
+              <el-option v-for="tag in rollbackTargetTags" :key="tag.id" :label="`${tag.name}：${modelLabel(tag.model)}`" :value="tag.id" />
             </el-select>
             <el-select v-else v-model="rollbackForm.target_model_id" clearable placeholder="目标模型">
-              <el-option v-for="model in versionModels" :key="model.id" :label="modelVersionLabel(model)" :value="model.id" />
+              <el-option v-for="model in rollbackTargetModels" :key="model.id" :label="modelVersionLabel(model)" :value="model.id" />
             </el-select>
             <el-input v-model="rollbackForm.reason" placeholder="回滚原因" />
             <el-button type="warning" @click="rollbackModel">执行回滚</el-button>
@@ -729,6 +729,15 @@ const tagTargetModels = computed(() => {
   if (!branch) return versionModels.value
   return versionModels.value.filter((model) => model.branch_name === branch.name)
 })
+const rollbackBranch = computed(() => branches.value.find((item) => item.id === rollbackForm.branch_id))
+const rollbackTargetModels = computed(() => {
+  if (!rollbackBranch.value) return []
+  return versionModels.value.filter((model) => model.branch_name === rollbackBranch.value?.name)
+})
+const rollbackTargetTags = computed(() => {
+  if (!rollbackBranch.value) return []
+  return tags.value.filter((tag) => tag.branch_id === rollbackBranch.value?.id)
+})
 
 function onFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0] || null
@@ -914,6 +923,7 @@ function selectBranch(row: VersionBranch) {
   if (tagForm.model_id && !tagTargetModels.value.some((model) => model.id === tagForm.model_id)) {
     tagForm.model_id = undefined
   }
+  resetInvalidRollbackTargets()
 }
 
 function prepareTag(row: VersionBranch) {
@@ -1020,6 +1030,18 @@ async function rollbackModel() {
     if (error !== 'cancel') {
       ElMessage.error(apiError(error, '回滚失败'))
     }
+  }
+}
+
+function resetInvalidRollbackTargets() {
+  if (rollbackForm.tag_id && !rollbackTargetTags.value.some((tag) => tag.id === rollbackForm.tag_id)) {
+    rollbackForm.tag_id = undefined
+  }
+  if (
+    rollbackForm.target_model_id &&
+    !rollbackTargetModels.value.some((model) => model.id === rollbackForm.target_model_id)
+  ) {
+    rollbackForm.target_model_id = undefined
   }
 }
 

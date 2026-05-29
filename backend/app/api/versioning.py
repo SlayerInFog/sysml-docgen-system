@@ -263,6 +263,8 @@ def rollback(
         tag = ensure_tag_access(db, payload.tag_id, user)
         if tag.item_type != item_type or tag.project_id != payload.project_id:
             raise HTTPException(status_code=400, detail="回滚标签与当前范围不一致")
+        if tag.branch_id != branch.id:
+            raise HTTPException(status_code=400, detail="回滚标签不属于目标分支")
 
     if item_type == "model":
         target_model_id = tag.model_id if tag else payload.target_model_id
@@ -271,6 +273,8 @@ def rollback(
         target_model = ensure_model_access(db, target_model_id, user)
         if target_model.project_id != payload.project_id:
             raise HTTPException(status_code=400, detail="回滚目标模型不属于所选项目")
+        if target_model.branch_name != branch.name:
+            raise HTTPException(status_code=400, detail="回滚目标模型不属于目标分支")
         new_model = clone_model_version(db, target_model, user, branch.name)
         branch.head_model_id = new_model.id
     else:

@@ -320,17 +320,25 @@ def _model_tag_exists(db: Session, project_id: int, name: str, tag: str) -> bool
 def _delete_model_versioning_records(db: Session, model_id: int) -> None:
     bind = db.get_bind()
     inspector = inspect(bind)
-    if "version_tags" in inspector.get_table_names():
+    table_names = set(inspector.get_table_names())
+    if "version_rollback_records" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("version_rollback_records")}
+        reference_columns = [column for column in ("target_model_id", "new_model_id", "model_id") if column in columns]
+        if "tag_id" in columns and "version_tags" in table_names:
+            reference_columns.append("tag_id")
+        if reference_columns:
+            conditions = []
+            for column in reference_columns:
+                if column == "tag_id":
+                    conditions.append("tag_id IN (SELECT id FROM version_tags WHERE model_id = :model_id)")
+                else:
+                    conditions.append(f"{column} = :model_id")
+            db.execute(
+                text(f"DELETE FROM version_rollback_records WHERE {' OR '.join(conditions)}"),
+                {"model_id": model_id},
+            )
+    if "version_tags" in table_names:
         db.execute(
             text("DELETE FROM version_tags WHERE model_id = :model_id"),
             {"model_id": model_id},
         )
-    if "version_rollback_records" in inspector.get_table_names():
-        columns = {column["name"] for column in inspector.get_columns("version_rollback_records")}
-        reference_columns = [column for column in ("target_model_id", "new_model_id", "model_id") if column in columns]
-        if reference_columns:
-            conditions = " OR ".join(f"{column} = :model_id" for column in reference_columns)
-            db.execute(
-                text(f"DELETE FROM version_rollback_records WHERE {conditions}"),
-                {"model_id": model_id},
-            )
