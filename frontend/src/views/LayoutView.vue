@@ -1,8 +1,13 @@
 <template>
   <el-container class="shell">
     <el-aside width="236px" class="aside">
-      <h2>SysMLDocGen</h2>
-      <p class="muted">文档自动生成系统</p>
+      <div class="brand">
+        <div class="brand-mark">S</div>
+        <div>
+          <h2>SysMLDocGen</h2>
+          <p>文档自动生成系统</p>
+        </div>
+      </div>
       <el-menu router :default-active="$route.path" class="menu">
         <el-menu-item index="/dashboard"><el-icon><DataBoard /></el-icon>工作台</el-menu-item>
         <el-menu-item index="/projects"><el-icon><Folder /></el-icon>项目管理</el-menu-item>
@@ -14,9 +19,12 @@
     </el-aside>
     <el-container>
       <el-header class="header">
-        <span>{{ auth.user?.full_name || auth.user?.username }}</span>
-        <el-tag>{{ roleLabel }}</el-tag>
-        <el-button @click="logout">退出</el-button>
+        <div class="header-title">基于 SysML 模型的文档自动生成系统</div>
+        <div class="account">
+          <span>{{ auth.user?.full_name || auth.user?.username }}</span>
+          <el-tag>{{ roleLabel }}</el-tag>
+          <el-button @click="logout">退出</el-button>
+        </div>
       </el-header>
       <el-main class="main">
         <router-view />
@@ -43,27 +51,63 @@ function logout() {
 <style scoped>
 .shell {
   min-height: 100vh;
+  background: var(--bg);
 }
 .aside {
-  padding: 24px 14px;
-  background: #102f35;
-  color: #f8f3e9;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 22px 14px;
+  background: linear-gradient(180deg, #0b3d45 0%, #123238 100%);
+  color: #eef7f8;
+  box-shadow: 8px 0 24px rgba(23, 33, 43, 0.12);
+}
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 6px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+}
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  color: #0b3d45;
+  background: #e8f4f5;
+  font-weight: 900;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.16);
 }
 .aside h2 {
   margin: 0;
+  font-size: 19px;
+  line-height: 1.2;
+}
+.brand p {
+  margin: 4px 0 0;
+  color: #b7d3d6;
+  font-size: 12px;
 }
 .menu {
-  margin-top: 24px;
+  margin-top: 18px;
   border-right: 0;
   background: transparent;
 }
 :deep(.el-menu-item) {
-  color: #e7efed;
-  border-radius: 12px;
+  height: 44px;
+  margin: 4px 0;
+  color: #dcebec;
+  border-radius: 8px;
+  font-weight: 700;
+}
+:deep(.el-menu-item .el-icon) {
+  color: #a9cdd1;
 }
 :deep(.el-menu-item:hover),
 :deep(.el-menu-item:focus) {
-  background: #1d4b52;
+  background: rgba(255, 255, 255, 0.1);
   color: #ffffff;
 }
 :deep(.el-menu-item:hover .el-icon),
@@ -71,7 +115,7 @@ function logout() {
   color: #ffffff;
 }
 :deep(.el-menu-item.is-active) {
-  background: #f8f3e9;
+  background: #edf7f7;
   color: var(--brand-dark);
 }
 :deep(.el-menu-item.is-active .el-icon) {
@@ -79,7 +123,7 @@ function logout() {
 }
 :deep(.el-menu-item.is-active:hover),
 :deep(.el-menu-item.is-active:focus) {
-  background: #fffaf0;
+  background: #ffffff;
   color: var(--brand-dark);
 }
 :deep(.el-menu-item.is-active:hover .el-icon),
@@ -88,13 +132,26 @@ function logout() {
 }
 .header {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
   gap: 14px;
-  background: rgba(255, 250, 240, 0.78);
+  height: 62px;
+  background: rgba(255, 255, 255, 0.86);
   border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+.header-title {
+  color: #38505d;
+  font-weight: 800;
+}
+.account {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
 }
 .main {
-  padding: 28px;
+  padding: 26px 30px 34px;
+  min-width: 0;
 }
 </style>

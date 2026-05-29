@@ -4,6 +4,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -161,6 +162,7 @@ def delete_model(
         raise HTTPException(status_code=400, detail="Model has generated documents and cannot be deleted")
     stored_path = Path(model.stored_path) if model.stored_path else None
     model_name = model.name
+    _delete_model_versioning_records(db, model.id)
     db.delete(model)
     db.commit()
     if stored_path and stored_path.exists():
@@ -310,3 +312,27 @@ def _model_tag_exists(db: Session, project_id: int, name: str, tag: str) -> bool
         .filter(SysMLModel.project_id == project_id, SysMLModel.name == name, SysMLModel.version_tag == tag)
         .first()
     )
+
+
+def _delete_model_versioning_records(db: Session, model_id: int) -> None:
+    bind = db.get_bind()
+    inspector = inspect(bind)
+    if "version_tags" in inspector.get_table_names():
+        db.execute(
+            text("DELETE FROM version_tags WHERE model_id = :model_id"),
+            {"model_id": model_id},
+        )
+    if "version_branches" in inspector.get_table_names():
+        db.execute(
+            text("DELETE FROM version_branches WHERE head_model_id = :model_id"),
+            {"model_id": model_id},
+        )
+    if "version_rollback_records" in inspector.get_table_names():
+        columns = {column["name"] for column in inspector.get_columns("version_rollback_records")}
+        reference_columns = [column for column in ("target_model_id", "new_model_id", "model_id") if column in columns]
+        if reference_columns:
+            conditions = " OR ".join(f"{column} = :model_id" for column in reference_columns)
+            db.execute(
+                text(f"DELETE FROM version_rollback_records WHERE {conditions}"),
+                {"model_id": model_id},
+            )

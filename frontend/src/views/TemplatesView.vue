@@ -82,7 +82,13 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError } from '@/api/http'
-import { documentApi, projectApi, type Project, type Template, type TemplateVersion } from '@/api'
+import {
+  documentApi,
+  projectApi,
+  type Project,
+  type Template,
+  type TemplateVersion,
+} from '@/api'
 
 const DEFAULT_CONTENT =
   '<h1>{{ title }}</h1><p>模型：{{ model.name }}</p>{% for element in elements %}<p>{{ element.name }} - {{ element.type }}</p>{% endfor %}'
@@ -147,7 +153,7 @@ async function openHistory(template: Template) {
     versions.value = await documentApi.templateVersions(template.id)
     historyDialog.value = true
   } catch (error) {
-    ElMessage.error(apiError(error, '加载版本历史失败'))
+    ElMessage.error(apiError(error, '加载模板历史失败'))
   }
 }
 
@@ -215,7 +221,6 @@ function resetForm() {
 
 function cancelDialog() {
   dialog.value = false
-  resetForm()
 }
 
 async function save() {
@@ -229,7 +234,6 @@ async function save() {
       ElMessage.success('模板已创建')
     }
     dialog.value = false
-    resetForm()
     await load()
   } catch (error) {
     ElMessage.error(apiError(error, '保存模板失败'))
@@ -245,6 +249,7 @@ onMounted(load)
 .variable-hint {
   margin-bottom: 12px;
 }
+
 .html-preview {
   width: 100%;
   min-height: 360px;
@@ -253,4 +258,5 @@ onMounted(load)
   border-radius: 8px;
   background: #fff;
 }
+
 </style>

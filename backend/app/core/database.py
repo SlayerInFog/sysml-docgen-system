@@ -53,9 +53,20 @@ def _ensure_version_metadata_columns() -> None:
             ("branch_name", "VARCHAR(80) NOT NULL DEFAULT 'main'"),
             ("version_tag", "VARCHAR(80) NULL"),
         ],
+        "version_branches": [
+            ("status", "VARCHAR(30) NOT NULL DEFAULT 'active'"),
+        ],
+        "version_tags": [
+            ("snapshot_json", "TEXT NULL"),
+        ],
+        "version_rollback_records": [
+            ("reason", "TEXT NULL"),
+        ],
     }
     with engine.begin() as conn:
         for table_name, columns in migrations.items():
+            if table_name not in inspector.get_table_names():
+                continue
             existing = {column["name"] for column in inspector.get_columns(table_name)}
             for column_name, definition in columns:
                 if column_name not in existing:

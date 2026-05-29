@@ -22,6 +22,9 @@ class Project(Base):
     models = relationship("SysMLModel", back_populates="project", cascade="all, delete-orphan")
     templates = relationship("DocumentTemplate", back_populates="project", cascade="all, delete-orphan")
     documents = relationship("GeneratedDocument", back_populates="project", cascade="all, delete-orphan")
+    version_branches = relationship("VersionBranch", back_populates="project", cascade="all, delete-orphan")
+    version_tags = relationship("VersionTag", back_populates="project", cascade="all, delete-orphan")
+    version_rollback_records = relationship("VersionRollbackRecord", back_populates="project", cascade="all, delete-orphan")
 
 
 class ProjectMember(Base):

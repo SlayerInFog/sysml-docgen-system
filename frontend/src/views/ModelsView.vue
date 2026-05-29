@@ -7,7 +7,7 @@
         <div class="upload-fields">
           <el-form-item label="所属项目">
             <el-select v-model="upload.project_id" placeholder="选择项目">
-              <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+              <el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" />
             </el-select>
           </el-form-item>
           <el-form-item label="模型名称"><el-input v-model="upload.name" /></el-form-item>
@@ -48,6 +48,92 @@
           </template>
         </el-table-column>
       </el-table>
+    </el-card>
+
+    <el-card style="margin-top: 18px">
+      <template #header>
+        <div class="card-header">
+          <span>模型版本分支 / 标签 / 回滚</span>
+          <el-select v-model="versionProjectId" placeholder="选择项目" style="width: 240px" @change="loadModelVersioning">
+            <el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" />
+          </el-select>
+        </div>
+      </template>
+      <div class="version-grid">
+        <div class="version-panel">
+          <h3>分支</h3>
+          <div class="version-form">
+            <el-input v-model="branchForm.name" placeholder="分支名称，如 main" />
+            <el-select v-model="branchForm.source_model_id" clearable placeholder="来源模型版本">
+              <el-option v-for="model in versionModels" :key="model.id" :label="modelVersionLabel(model)" :value="model.id" />
+            </el-select>
+            <el-button type="primary" @click="createBranch">创建</el-button>
+          </div>
+          <el-table :data="branches" height="220" size="small" stripe @row-click="selectBranch">
+            <el-table-column prop="name" label="分支" />
+            <el-table-column label="当前模型">
+              <template #default="{ row }">{{ modelLabel(row.head_model) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="130" class-name="table-actions-cell">
+              <template #default="{ row }">
+                <div class="table-actions">
+                  <el-button text type="primary" @click.stop="prepareTag(row)">打标签</el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div class="version-panel">
+          <h3>标签</h3>
+          <div class="version-form">
+            <el-input v-model="tagForm.name" placeholder="标签名称，如 baseline-v1" />
+            <el-select v-model="tagForm.model_id" clearable placeholder="目标模型">
+              <el-option v-for="model in versionModels" :key="model.id" :label="modelVersionLabel(model)" :value="model.id" />
+            </el-select>
+            <el-button @click="createTag">创建</el-button>
+          </div>
+          <el-table :data="tags" height="220" size="small" stripe>
+            <el-table-column prop="name" label="标签" />
+            <el-table-column label="目标模型">
+              <template #default="{ row }">{{ modelLabel(row.model) }}</template>
+            </el-table-column>
+            <el-table-column label="分支">
+              <template #default="{ row }">{{ branchName(row.branch_id) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div class="version-panel">
+          <h3>回滚</h3>
+          <div class="version-form rollback-form">
+            <el-select v-model="rollbackForm.branch_id" clearable placeholder="目标分支">
+              <el-option v-for="branch in branches" :key="branch.id" :label="branch.name" :value="branch.id" />
+            </el-select>
+            <el-radio-group v-model="rollbackMode">
+              <el-radio-button label="tag">标签</el-radio-button>
+              <el-radio-button label="model">模型</el-radio-button>
+            </el-radio-group>
+            <el-select v-if="rollbackMode === 'tag'" v-model="rollbackForm.tag_id" clearable placeholder="目标标签">
+              <el-option v-for="tag in tags" :key="tag.id" :label="`${tag.name}：${modelLabel(tag.model)}`" :value="tag.id" />
+            </el-select>
+            <el-select v-else v-model="rollbackForm.target_model_id" clearable placeholder="目标模型">
+              <el-option v-for="model in versionModels" :key="model.id" :label="modelVersionLabel(model)" :value="model.id" />
+            </el-select>
+            <el-input v-model="rollbackForm.reason" placeholder="回滚原因" />
+            <el-button type="warning" @click="rollbackModel">执行回滚</el-button>
+          </div>
+          <el-table :data="rollbackRecords" height="150" size="small" stripe>
+            <el-table-column label="分支" width="90">
+              <template #default="{ row }">{{ branchName(row.branch_id) }}</template>
+            </el-table-column>
+            <el-table-column label="回滚到">
+              <template #default="{ row }">{{ modelLabel(row.target_model) }}</template>
+            </el-table-column>
+            <el-table-column label="生成版本">
+              <template #default="{ row }">{{ modelLabel(row.new_model) }}</template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </div>
     </el-card>
 
     <el-row v-if="selected" :gutter="18" style="margin-top: 18px">
@@ -196,12 +282,7 @@
       <template #header>模型版本对比</template>
       <div class="compare-toolbar">
         <el-select v-model="targetModelId" placeholder="选择对比版本" style="flex: 1">
-          <el-option
-            v-for="item in comparableModels"
-            :key="item.id"
-            :label="modelVersionLabel(item)"
-            :value="item.id"
-          />
+          <el-option v-for="item in comparableModels" :key="item.id" :label="modelVersionLabel(item)" :value="item.id" />
         </el-select>
         <div class="table-export-actions">
           <el-button type="primary" :disabled="!targetModelId" @click="loadCompare">对比</el-button>
@@ -274,11 +355,15 @@ import { apiError } from '@/api/http'
 import {
   modelApi,
   projectApi,
+  versioningApi,
   type ModelCompare,
   type ModelElement,
   type ModelRelation,
   type Project,
   type SysMLModel,
+  type VersionBranch,
+  type VersionRollbackRecord,
+  type VersionTag,
 } from '@/api'
 
 interface ElementTreeNode {
@@ -313,6 +398,19 @@ const compareResult = ref<ModelCompare | null>(null)
 const elementKeyword = ref('')
 const elementType = ref('')
 const modelTreeRef = ref<TreeInstance>()
+const versionProjectId = ref<number>()
+const branches = ref<VersionBranch[]>([])
+const tags = ref<VersionTag[]>([])
+const rollbackRecords = ref<VersionRollbackRecord[]>([])
+const rollbackMode = ref<'tag' | 'model'>('tag')
+const branchForm = reactive({ name: '', source_model_id: undefined as number | undefined })
+const tagForm = reactive({ name: '', branch_id: undefined as number | undefined, model_id: undefined as number | undefined })
+const rollbackForm = reactive({
+  branch_id: undefined as number | undefined,
+  tag_id: undefined as number | undefined,
+  target_model_id: undefined as number | undefined,
+  reason: '',
+})
 
 const elementByUid = computed(() => new Map(elements.value.map((element) => [element.element_uid, element])))
 const elementTypes = computed(() => [...new Set(elements.value.map((item) => item.type).filter(Boolean))].sort())
@@ -357,7 +455,6 @@ const visibleRelations = computed(() =>
     (relation) => visibleElementUids.value.has(relation.source_uid) || visibleElementUids.value.has(relation.target_uid),
   ),
 )
-
 const elementTree = computed(() => {
   const nodes = new Map<string, ElementTreeNode>()
   filteredElements.value.forEach((element) => {
@@ -379,7 +476,6 @@ const elementTree = computed(() => {
   })
   return roots
 })
-
 const overviewGraphElements = computed(() => {
   const picked = new Map<string, ModelElement>()
   const add = (items: ModelElement[], limit: number) => {
@@ -393,14 +489,12 @@ const overviewGraphElements = computed(() => {
   const connected = [...candidates].sort(
     (a, b) => (relationDegreeByUid.value.get(b.element_uid) || 0) - (relationDegreeByUid.value.get(a.element_uid) || 0),
   )
-
   add(roots, 10)
   add(parents, 14)
   add(connected, 18)
   add(candidates, 36)
   return Array.from(picked.values()).slice(0, 36)
 })
-
 const graphSourceElements = computed(() => {
   if (!selectedElement.value) return overviewGraphElements.value
   const relatedUids = new Set<string>([selectedElement.value.element_uid])
@@ -415,7 +509,6 @@ const graphSourceElements = computed(() => {
     .filter((element): element is ModelElement => Boolean(element))
     .slice(0, 36)
 })
-
 const graphNodes = computed(() => {
   const centerX = 380
   const centerY = 215
@@ -434,7 +527,6 @@ const graphNodes = computed(() => {
     }
   })
 })
-
 const graphEdges = computed(() => {
   const nodeMap = new Map(graphNodes.value.map((node) => [node.uid, node]))
   return relations.value
@@ -446,7 +538,6 @@ const graphEdges = computed(() => {
       target: nodeMap.get(relation.target_uid)!,
     }))
 })
-
 const selectedElementRelations = computed(() => {
   if (!selectedElement.value) return []
   return relations.value.filter(
@@ -455,18 +546,24 @@ const selectedElementRelations = computed(() => {
       relation.target_uid === selectedElement.value?.element_uid,
   )
 })
-
 const comparableModels = computed(() =>
   models.value.filter((item) => item.id !== selected.value?.id && item.project_id === selected.value?.project_id),
 )
+const versionModels = computed(() => models.value.filter((item) => item.project_id === versionProjectId.value))
 
 function onFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0] || null
 }
+
 async function load() {
   projects.value = await projectApi.list()
   models.value = await modelApi.list()
+  if (!versionProjectId.value && projects.value.length) {
+    versionProjectId.value = projects.value[0].id
+  }
+  await loadModelVersioning()
 }
+
 async function submit() {
   if (!upload.project_id || !upload.name || !file.value) {
     ElMessage.warning('请填写项目、模型名称并选择文件')
@@ -490,8 +587,13 @@ async function submit() {
     loading.value = false
   }
 }
+
 async function selectModel(row: SysMLModel) {
   selected.value = row
+  if (versionProjectId.value !== row.project_id) {
+    versionProjectId.value = row.project_id
+    await loadModelVersioning()
+  }
   selectedElement.value = null
   targetModelId.value = undefined
   compareResult.value = null
@@ -501,6 +603,107 @@ async function selectModel(row: SysMLModel) {
   elements.value = graph.elements
   relations.value = graph.relations
 }
+
+async function loadModelVersioning() {
+  if (!versionProjectId.value) return
+  const params = { item_type: 'model' as const, project_id: versionProjectId.value }
+  branches.value = await versioningApi.branches(params)
+  tags.value = await versioningApi.tags(params)
+  rollbackRecords.value = await versioningApi.rollbackRecords(params)
+}
+
+async function createBranch() {
+  if (!versionProjectId.value || !branchForm.name.trim()) {
+    ElMessage.warning('请选择项目并填写分支名称')
+    return
+  }
+  try {
+    await versioningApi.createBranch({
+      project_id: versionProjectId.value,
+      item_type: 'model',
+      name: branchForm.name,
+      source_model_id: branchForm.source_model_id,
+    })
+    ElMessage.success('模型分支已创建')
+    Object.assign(branchForm, { name: '', source_model_id: undefined })
+    await loadModelVersioning()
+  } catch (error) {
+    ElMessage.error(apiError(error, '创建分支失败'))
+  }
+}
+
+function selectBranch(row: VersionBranch) {
+  rollbackForm.branch_id = row.id
+  tagForm.branch_id = row.id
+}
+
+function prepareTag(row: VersionBranch) {
+  tagForm.branch_id = row.id
+  tagForm.model_id = row.head_model_id
+}
+
+async function createTag() {
+  if (!versionProjectId.value || !tagForm.name.trim() || !tagForm.model_id) {
+    ElMessage.warning('请填写标签名称并选择目标模型')
+    return
+  }
+  try {
+    await versioningApi.createTag({
+      project_id: versionProjectId.value,
+      item_type: 'model',
+      branch_id: tagForm.branch_id,
+      model_id: tagForm.model_id,
+      name: tagForm.name,
+    })
+    ElMessage.success('模型标签已创建')
+    Object.assign(tagForm, { name: '', branch_id: undefined, model_id: undefined })
+    await loadModelVersioning()
+  } catch (error) {
+    ElMessage.error(apiError(error, '创建标签失败'))
+  }
+}
+
+async function rollbackModel() {
+  if (!versionProjectId.value || !rollbackForm.branch_id) {
+    ElMessage.warning('请选择目标分支')
+    return
+  }
+  if (rollbackMode.value === 'tag' && !rollbackForm.tag_id) {
+    ElMessage.warning('请选择目标标签')
+    return
+  }
+  if (rollbackMode.value === 'model' && !rollbackForm.target_model_id) {
+    ElMessage.warning('请选择目标模型')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('回滚会复制目标模型并生成新的模型版本，是否继续？', '确认回滚', { type: 'warning' })
+    await versioningApi.rollback({
+      project_id: versionProjectId.value,
+      item_type: 'model',
+      branch_id: rollbackForm.branch_id,
+      tag_id: rollbackMode.value === 'tag' ? rollbackForm.tag_id : undefined,
+      target_model_id: rollbackMode.value === 'model' ? rollbackForm.target_model_id : undefined,
+      reason: rollbackForm.reason,
+    })
+    ElMessage.success('模型回滚完成')
+    models.value = await modelApi.list()
+    await loadModelVersioning()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(apiError(error, '回滚失败'))
+    }
+  }
+}
+
+function modelLabel(model?: SysMLModel) {
+  return model ? modelVersionLabel(model) : '未设置'
+}
+
+function branchName(id?: number) {
+  return id ? branches.value.find((branch) => branch.id === id)?.name || `#${id}` : '未关联'
+}
+
 function editModel(row: SysMLModel) {
   editingModelId.value = row.id
   Object.assign(modelForm, {
@@ -509,6 +712,7 @@ function editModel(row: SysMLModel) {
   })
   modelDialog.value = true
 }
+
 async function saveModel() {
   if (!editingModelId.value) return
   try {
@@ -525,6 +729,7 @@ async function saveModel() {
     ElMessage.error(apiError(error, '更新模型失败'))
   }
 }
+
 async function removeModel(row: SysMLModel) {
   try {
     await ElMessageBox.confirm(`删除模型“${row.name}”？模型元素和关系会一并删除。`, '确认删除', { type: 'warning' })
@@ -545,28 +750,34 @@ async function removeModel(row: SysMLModel) {
     }
   }
 }
+
 function resetModelForm() {
   editingModelId.value = undefined
   Object.assign(modelForm, { name: '', description: '' })
 }
+
 function focusElement(row: ModelElement) {
   selectedElement.value = row
   syncTreeSelection(row.element_uid)
 }
+
 function focusTreeNode(node: ElementTreeNode) {
   selectedElement.value = node.element
   syncTreeSelection(node.uid)
 }
+
 function focusRelation(row: ModelRelation) {
   const element = elementByUid.value.get(row.source_uid) || elementByUid.value.get(row.target_uid)
   if (element) focusElement(element)
 }
+
 function editElement(row: ModelElement) {
   selectedElement.value = row
   syncTreeSelection(row.element_uid)
   editing.value = { ...row }
   editDialog.value = true
 }
+
 async function saveElement() {
   if (!editing.value) return
   const updated = await modelApi.updateElement(editing.value.id, {
@@ -579,6 +790,7 @@ async function saveElement() {
   editDialog.value = false
   ElMessage.success('元素已更新')
 }
+
 async function loadCompare() {
   if (!selected.value || !targetModelId.value) return
   try {
@@ -587,6 +799,7 @@ async function loadCompare() {
     ElMessage.error(apiError(error, '版本对比失败'))
   }
 }
+
 function exportCompareCsv() {
   if (!compareResult.value) return
   const rows = [
@@ -617,6 +830,7 @@ function exportCompareCsv() {
   ]
   downloadText(compareFileName('csv'), rows.map((row) => row.map(escapeCsv).join(',')).join('\n'), 'text/csv;charset=utf-8')
 }
+
 function exportCompareHtml() {
   if (!compareResult.value) return
   const result = compareResult.value
@@ -638,15 +852,18 @@ function exportCompareHtml() {
   const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>模型版本对比报告</title><style>body{font-family:Microsoft YaHei,sans-serif;line-height:1.7;color:#1f2937;padding:24px}table{border-collapse:collapse;width:100%;margin:12px 0 20px}td,th{border:1px solid #cbd5e1;padding:8px 10px}h1,h2{color:#0f172a}.meta{color:#64748b}</style></head><body><h1>模型版本对比报告</h1><p class="meta">基准：${escapeHtml(result.base_model.name)} V${result.base_model.version}；目标：${escapeHtml(result.target_model.name)} V${result.target_model.version}</p>${section('新增元素', elementRows(result.added_elements))}${section('删除元素', elementRows(result.removed_elements))}${section('变更元素', elementRows(result.changed_elements))}${section('新增关系', relationRows(result.added_relations))}${section('删除关系', relationRows(result.removed_relations))}</body></html>`
   downloadText(compareFileName('html'), html, 'text/html;charset=utf-8')
 }
+
 function compactName(value: string) {
   return value.length > 8 ? `${value.slice(0, 7)}...` : value
 }
+
 function relationPeerName(relation: ModelRelation) {
   if (!selectedElement.value) return ''
   const peerUid =
     relation.source_uid === selectedElement.value.element_uid ? relation.target_uid : relation.source_uid
   return elementByUid.value.get(peerUid)?.name || peerUid
 }
+
 function statusLabel(status: string) {
   return (
     {
@@ -654,29 +871,35 @@ function statusLabel(status: string) {
       parsing: '解析中',
       failed: '解析失败',
       uploaded: '已上传',
+      rollback: '回滚版本',
     }[status] || status
   )
 }
+
 function modelVersionLabel(model: SysMLModel) {
   const tag = model.version_tag ? ` @ ${model.version_tag}` : ''
   return `${model.name} ${model.branch_name} v${model.version}${tag}`
 }
+
 function clearFocus() {
   selectedElement.value = null
   modelTreeRef.value?.setCurrentKey()
 }
+
 function nodeTooltip(element: ModelElement) {
   const childCount = childCountByUid.value.get(element.element_uid) || 0
   const relationCount = relationDegreeByUid.value.get(element.element_uid) || 0
   const documentation = element.documentation ? `\n说明：${element.documentation}` : '\n说明：暂无'
   return `名称：${element.name}\n类型：${element.type}\nUID：${element.element_uid}\n父级：${element.parent_uid || '无'}\n子节点：${childCount}\n关联关系：${relationCount}${documentation}`
 }
+
 function compareFileName(ext: 'csv' | 'html') {
   const base = compareResult.value?.base_model.name || 'base'
   const target = compareResult.value?.target_model.name || 'target'
   const safe = `${base}-vs-${target}`.replace(/[^\w\u4e00-\u9fa5-]+/g, '_').slice(0, 80)
   return `model-compare-${safe}.${ext}`
 }
+
 function downloadText(filename: string, content: string, type: string) {
   const prefix = type.includes('csv') ? '\uFEFF' : ''
   const blob = new Blob([prefix + content], { type })
@@ -689,9 +912,11 @@ function downloadText(filename: string, content: string, type: string) {
   link.remove()
   URL.revokeObjectURL(url)
 }
+
 function escapeCsv(value: unknown) {
   return `"${String(value).replace(/"/g, '""')}"`
 }
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -700,6 +925,7 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;')
 }
+
 async function syncTreeSelection(uid: string) {
   await nextTick()
   const tree = modelTreeRef.value
@@ -713,6 +939,7 @@ async function syncTreeSelection(uid: string) {
   await nextTick()
   document.querySelector('.model-tree .is-current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
+
 onMounted(load)
 </script>
 
@@ -724,6 +951,7 @@ onMounted(load)
   justify-content: space-between;
   flex-wrap: wrap;
 }
+
 .upload-fields {
   display: grid;
   grid-template-columns: repeat(6, minmax(140px, 1fr));
@@ -731,19 +959,23 @@ onMounted(load)
   flex: 1;
   min-width: 0;
 }
+
 .upload-actions {
   padding-bottom: 18px;
   white-space: nowrap;
 }
+
 .upload-form :deep(.el-select),
 .upload-form :deep(.el-input) {
   width: 100%;
 }
+
 .file-input {
   width: 100%;
   height: 32px;
   padding: 4px 0;
 }
+
 .card-header,
 .compare-toolbar,
 .filter-bar {
@@ -752,28 +984,36 @@ onMounted(load)
   align-items: center;
   justify-content: space-between;
 }
+
 .filter-bar {
   margin-bottom: 12px;
 }
+
 .filter-bar .el-input {
   flex: 1;
 }
+
 .filter-bar .el-select {
   width: 180px;
 }
+
 .viewer-row {
   margin-top: 18px;
   align-items: stretch;
 }
+
 .viewer-col {
   display: flex;
 }
+
 .viewer-card {
   width: 100%;
 }
+
 .viewer-card :deep(.el-card__body) {
   height: 512px;
 }
+
 .tree-scroll {
   height: 100%;
   overflow: auto;
@@ -781,16 +1021,17 @@ onMounted(load)
   border-radius: 8px;
   background: #fff;
 }
+
 .model-tree {
   min-width: 680px;
   padding: 8px 0;
 }
-.model-tree :deep(.el-tree-node__content) {
-  white-space: nowrap;
-}
+
+.model-tree :deep(.el-tree-node__content),
 .model-tree :deep(.el-tree-node__label) {
   white-space: nowrap;
 }
+
 .graph-legend {
   display: flex;
   gap: 14px;
@@ -799,11 +1040,13 @@ onMounted(load)
   color: var(--muted);
   font-size: 13px;
 }
+
 .graph-actions {
   display: flex;
   gap: 10px;
   align-items: center;
 }
+
 .legend-dot {
   display: inline-block;
   width: 10px;
@@ -812,22 +1055,27 @@ onMounted(load)
   border-radius: 50%;
   vertical-align: -1px;
 }
+
 .current-dot {
   background: #f6d7bd;
   border: 1px solid var(--accent);
 }
+
 .parent-dot {
   background: #fde68a;
   border: 1px solid #b45309;
 }
+
 .child-dot {
   background: #dcfce7;
   border: 1px solid #15803d;
 }
+
 .graph-panel {
   height: 434px;
   overflow: hidden;
 }
+
 .graph-panel svg {
   width: 100%;
   height: 100%;
@@ -835,47 +1083,57 @@ onMounted(load)
   border-radius: 8px;
   background: #fbfcfb;
 }
+
 .graph-edge {
   stroke: #6b7280;
   stroke-width: 1.4;
   opacity: 0.62;
 }
+
 .graph-node {
   cursor: pointer;
 }
+
 .graph-node circle {
   fill: #e7efed;
   stroke: var(--brand);
   stroke-width: 2;
 }
+
 .graph-node.selectedParent circle {
   fill: #fde68a;
   stroke: #b45309;
   stroke-width: 2.6;
 }
+
 .graph-node.selectedChild circle {
   fill: #dcfce7;
   stroke: #15803d;
   stroke-width: 2.6;
 }
+
 .graph-node.active circle {
   fill: #f6d7bd;
   stroke: var(--accent);
   stroke-width: 3;
 }
+
 .graph-node text {
   fill: var(--ink);
   font-size: 11px;
   pointer-events: none;
 }
+
 .graph-node .node-type {
   fill: var(--muted);
   font-size: 9px;
 }
+
 .detail-panel h3 {
   margin: 0 0 12px;
   font-size: 18px;
 }
+
 .detail-doc {
   margin: 14px 0;
   border: 1px solid #b7d4d6;
@@ -884,6 +1142,7 @@ onMounted(load)
   background: #eef7f6;
   overflow: hidden;
 }
+
 .detail-doc-title {
   padding: 8px 12px;
   font-weight: 700;
@@ -891,6 +1150,7 @@ onMounted(load)
   background: #d8eeee;
   border-bottom: 1px solid #b7d4d6;
 }
+
 .detail-doc-body {
   min-height: 72px;
   max-height: 130px;
@@ -901,37 +1161,107 @@ onMounted(load)
   white-space: pre-wrap;
   word-break: break-word;
 }
+
 .compare-result {
   margin-top: 14px;
 }
+
 .compare-grid {
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   gap: 18px;
   align-items: start;
 }
+
 .compare-tabs {
   min-width: 0;
 }
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
   margin-bottom: 12px;
 }
+
 .stats-grid div {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 12px;
   background: #fff;
 }
+
 .stats-grid strong {
   display: block;
   font-size: 22px;
   color: var(--brand-dark);
 }
+
 .stats-grid span {
   color: var(--muted);
   font-size: 13px;
+}
+
+.version-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.version-panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbfb 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.version-panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  color: var(--brand-dark);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.version-panel h3::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.version-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rollback-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.version-form :deep(.el-select),
+.version-form :deep(.el-input) {
+  width: 100%;
+}
+
+.version-panel :deep(.el-table) {
+  border-radius: 6px;
+}
+
+@media (max-width: 1180px) {
+  .upload-fields,
+  .version-grid,
+  .compare-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

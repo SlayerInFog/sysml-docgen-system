@@ -88,6 +88,59 @@ export interface ModelCompare {
   removed_relations: RelationCompareItem[]
 }
 
+export type VersionItemType = 'model' | 'template'
+
+export interface VersionBranch {
+  id: number
+  project_id?: number
+  item_type: VersionItemType
+  name: string
+  description?: string
+  head_model_id?: number
+  head_template_id?: number
+  status: string
+  created_by: number
+  created_at: string
+  updated_at: string
+  head_model?: SysMLModel
+  head_template?: Template
+}
+
+export interface VersionTag {
+  id: number
+  project_id?: number
+  item_type: VersionItemType
+  branch_id?: number
+  model_id?: number
+  template_id?: number
+  name: string
+  description?: string
+  created_by: number
+  created_at: string
+  model?: SysMLModel
+  template?: Template
+}
+
+export interface VersionRollbackRecord {
+  id: number
+  project_id?: number
+  item_type: VersionItemType
+  branch_id: number
+  tag_id?: number
+  target_model_id?: number
+  new_model_id?: number
+  target_template_id?: number
+  new_template_id?: number
+  reason?: string
+  created_by: number
+  created_at: string
+  target_model?: SysMLModel
+  new_model?: SysMLModel
+  target_template?: Template
+  new_template?: Template
+  tag?: VersionTag
+}
+
 export interface Template {
   id: number
   project_id?: number
@@ -165,6 +218,41 @@ export const modelApi = {
       .then((r) => r.data),
   updateElement: (id: number, data: { name?: string; documentation?: string }) =>
     http.patch<ModelElement>(`/models/elements/${id}`, data).then((r) => r.data),
+}
+
+export const versioningApi = {
+  branches: (params: { item_type: VersionItemType; project_id?: number }) =>
+    http.get<VersionBranch[]>('/versioning/branches', { params }).then((r) => r.data),
+  createBranch: (data: {
+    project_id?: number
+    item_type: VersionItemType
+    name: string
+    description?: string
+    source_model_id?: number
+    source_template_id?: number
+  }) => http.post<VersionBranch>('/versioning/branches', data).then((r) => r.data),
+  tags: (params: { item_type: VersionItemType; project_id?: number; branch_id?: number }) =>
+    http.get<VersionTag[]>('/versioning/tags', { params }).then((r) => r.data),
+  createTag: (data: {
+    project_id?: number
+    item_type: VersionItemType
+    branch_id?: number
+    model_id?: number
+    template_id?: number
+    name: string
+    description?: string
+  }) => http.post<VersionTag>('/versioning/tags', data).then((r) => r.data),
+  rollback: (data: {
+    project_id?: number
+    item_type: VersionItemType
+    branch_id: number
+    tag_id?: number
+    target_model_id?: number
+    target_template_id?: number
+    reason?: string
+  }) => http.post<VersionRollbackRecord>('/versioning/rollback', data).then((r) => r.data),
+  rollbackRecords: (params: { item_type: VersionItemType; project_id?: number; branch_id?: number }) =>
+    http.get<VersionRollbackRecord[]>('/versioning/rollback-records', { params }).then((r) => r.data),
 }
 
 export const documentApi = {
