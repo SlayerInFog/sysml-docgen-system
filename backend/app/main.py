@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
 
-from app.api import audit, auth, documents, models, projects, versioning
+from app.api import audit, auth, documents, models, openmbee, projects, versioning
 from app.core.config import get_settings
 from app.core.database import init_db
 
@@ -33,6 +33,7 @@ app.include_router(models.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 app.include_router(versioning.router, prefix="/api")
+app.include_router(openmbee.router, prefix="/api")
 
 
 @app.exception_handler(OperationalError)

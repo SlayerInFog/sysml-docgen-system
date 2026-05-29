@@ -1,27 +1,169 @@
 <template>
   <div>
     <h1 class="page-title">模型管理</h1>
-    <el-card>
-      <template #header>上传 SysML / XMI / JSON 模型</template>
-      <el-form label-position="top" class="upload-form">
-        <div class="upload-fields">
-          <el-form-item label="所属项目">
-            <el-select v-model="upload.project_id" placeholder="选择项目">
-              <el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="模型名称"><el-input v-model="upload.name" /></el-form-item>
-          <el-form-item label="模型说明"><el-input v-model="upload.description" /></el-form-item>
-          <el-form-item label="分支"><el-input v-model="upload.branch_name" placeholder="main" /></el-form-item>
-          <el-form-item label="标记"><el-input v-model="upload.version_tag" placeholder="例如 v1.0-baseline" /></el-form-item>
-          <el-form-item label="模型文件">
-            <input class="file-input" type="file" accept=".xmi,.xml,.json,.uml,.sysml,.mms" @change="onFile" />
-          </el-form-item>
+    <el-card class="ingest-card">
+      <template #header>
+        <div class="card-header">
+          <span>模型导入来源</span>
+          <el-tag type="info">本地文件 / OpenMBEE MMS / Jupyter</el-tag>
         </div>
-        <div class="upload-actions">
-          <el-button type="primary" :loading="loading" @click="submit">上传并解析</el-button>
-        </div>
-      </el-form>
+      </template>
+      <el-tabs v-model="importSource" class="ingest-tabs" @tab-change="handleImportTabChange">
+        <el-tab-pane label="本地文件" name="local">
+          <el-form label-position="top" class="upload-form">
+            <div class="upload-fields">
+              <el-form-item label="所属项目">
+                <el-select v-model="upload.project_id" placeholder="选择项目">
+                  <el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="模型名称"><el-input v-model="upload.name" /></el-form-item>
+              <el-form-item label="模型说明"><el-input v-model="upload.description" /></el-form-item>
+              <el-form-item label="分支"><el-input v-model="upload.branch_name" placeholder="main" /></el-form-item>
+              <el-form-item label="标记"><el-input v-model="upload.version_tag" placeholder="例如 v1.0-baseline" /></el-form-item>
+              <el-form-item label="模型文件">
+                <input class="file-input" type="file" accept=".xmi,.xml,.json,.uml,.sysml,.mms" @change="onFile" />
+              </el-form-item>
+            </div>
+            <div class="upload-actions">
+              <el-button type="primary" :loading="loading" @click="submit">上传并解析</el-button>
+            </div>
+          </el-form>
+        </el-tab-pane>
+        <el-tab-pane label="OpenMBEE MMS" name="mms">
+          <div class="integration-panel">
+            <div class="integration-summary">
+              <div>
+                <h3>OpenMBEE MMS 接入</h3>
+                <p>用于后续连接 Cameo + MDK 同步到 MMS 的模型数据。当前先展示配置状态和接口目录。</p>
+              </div>
+              <div class="integration-actions">
+                <el-tag :type="openMbeeConfig?.mms_configured ? 'success' : 'warning'">
+                  {{ openMbeeConfig?.mms_configured ? '已配置 MMS' : '未配置 MMS' }}
+                </el-tag>
+                <el-button :disabled="!openMbeeConfig?.mms_configured" :loading="openMbeeTesting" @click="testMmsConnection">
+                  测试连接
+                </el-button>
+                <el-button :loading="openMbeeLoading" @click="loadOpenMbeeInfo">刷新</el-button>
+              </div>
+            </div>
+            <el-alert
+              v-if="!openMbeeConfig?.mms_configured"
+              type="warning"
+              :closable="false"
+              title="尚未配置 OpenMBEE MMS。可以先查看接口目录；真实连接需要在后端 .env 中配置 OPENMBEE_MMS_URL。"
+            />
+            <el-descriptions v-else :column="1" border size="small" class="integration-desc">
+              <el-descriptions-item label="MMS 地址">{{ openMbeeConfig.mms_url }}</el-descriptions-item>
+              <el-descriptions-item label="Doc Convert">
+                {{ openMbeeConfig.doc_convert_configured ? openMbeeConfig.doc_convert_url : '未配置' }}
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-form label-position="top" class="mms-import-form">
+              <el-form-item label="导入到本地项目">
+                <el-select v-model="mmsImportForm.local_project_id" placeholder="选择本地项目">
+                  <el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="本地模型名称">
+                <el-input v-model="mmsImportForm.name" placeholder="从 MMS 导入的模型名称" />
+              </el-form-item>
+              <el-form-item label="模型说明">
+                <el-input v-model="mmsImportForm.description" placeholder="可选" />
+              </el-form-item>
+              <el-form-item label="MMS 项目 ID">
+                <el-select
+                  v-model="mmsImportForm.mms_project_id"
+                  allow-create
+                  filterable
+                  default-first-option
+                  placeholder="输入或选择 MMS 项目"
+                  @change="loadMmsRefs"
+                >
+                  <el-option v-for="project in mmsProjects" :key="mmsItemId(project)" :label="mmsItemLabel(project)" :value="mmsItemId(project)" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="MMS 分支">
+                <el-select
+                  v-model="mmsImportForm.ref_id"
+                  allow-create
+                  filterable
+                  default-first-option
+                  placeholder="master / main / refs"
+                >
+                  <el-option v-for="refItem in mmsRefs" :key="mmsItemId(refItem)" :label="mmsItemLabel(refItem)" :value="mmsItemId(refItem)" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="根元素 ID">
+                <el-input v-model="mmsImportForm.root_element_id" placeholder="优先按根元素递归导入" />
+              </el-form-item>
+              <el-form-item label="搜索关键词">
+                <el-input v-model="mmsImportForm.search_keyword" placeholder="不填根元素时使用搜索导入" />
+              </el-form-item>
+              <el-form-item label="提交版本">
+                <el-input v-model="mmsImportForm.commit_id" placeholder="latest / commitId，可选" />
+              </el-form-item>
+              <el-form-item label="数量限制">
+                <el-input-number v-model="mmsImportForm.limit" :min="1" :max="2000" />
+              </el-form-item>
+              <el-form-item label="递归深度">
+                <el-input-number v-model="mmsImportForm.depth" :min="1" :max="20" placeholder="可选" />
+              </el-form-item>
+              <div class="mms-form-actions">
+                <el-button :disabled="!openMbeeConfig?.mms_configured" :loading="mmsProjectsLoading" @click="loadMmsProjects">
+                  获取 MMS 项目
+                </el-button>
+                <el-button :disabled="!openMbeeConfig?.mms_configured || !mmsImportForm.mms_project_id" :loading="mmsRefsLoading" @click="loadMmsRefs">
+                  获取分支
+                </el-button>
+                <el-button type="primary" :disabled="!openMbeeConfig?.mms_configured" :loading="mmsImporting" @click="importFromMms">
+                  导入为本地模型
+                </el-button>
+              </div>
+            </el-form>
+            <el-alert
+              v-if="mmsImportResult"
+              type="success"
+              :closable="false"
+              :title="`已导入模型 ${mmsImportResult.model.name} v${mmsImportResult.model.version}，元素 ${mmsImportResult.imported_elements} 个，关系 ${mmsImportResult.imported_relations} 条。`"
+            />
+            <el-table :data="openMbeeEndpoints" height="260" size="small" stripe class="endpoint-table">
+              <el-table-column prop="method" label="方法" width="86" />
+              <el-table-column prop="path" label="接口路径" min-width="280" />
+              <el-table-column prop="description" label="说明" min-width="180" />
+            </el-table>
+          </div>
+        </el-tab-pane>
+        <el-tab-pane label="Jupyter 实验台" name="jupyter">
+          <div class="integration-panel">
+            <div class="integration-summary">
+              <div>
+                <h3>Jupyter Notebook 验证</h3>
+                <p>用于演示登录、上传模型、查看元素关系、生成文档，以及验证 OpenMBEE 适配接口目录。</p>
+              </div>
+              <div class="integration-actions">
+                <el-button type="primary" @click="openJupyter">打开 Notebook</el-button>
+                <el-button @click="copyToClipboard(jupyterCommand)">复制启动命令</el-button>
+              </div>
+            </div>
+            <div class="jupyter-grid">
+              <div class="command-box">
+                <span>启动命令</span>
+                <pre>{{ jupyterCommand }}</pre>
+              </div>
+              <div class="command-box">
+                <span>Notebook 地址</span>
+                <pre>{{ jupyterUrl }}</pre>
+              </div>
+            </div>
+            <el-alert
+              type="info"
+              :closable="false"
+              title="Jupyter 需要单独启动；启动窗口不要关闭。它是验证工具，不替代 MDK/Cameo。"
+            />
+          </div>
+        </el-tab-pane>
+      </el-tabs>
     </el-card>
 
     <el-card style="margin-top: 18px">
@@ -349,16 +491,20 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import type { TreeInstance } from 'element-plus'
+import type { TabsPaneContext, TreeInstance } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError } from '@/api/http'
 import {
   modelApi,
+  openMbeeApi,
   projectApi,
   versioningApi,
   type ModelCompare,
   type ModelElement,
   type ModelRelation,
+  type OpenMbeeConfig,
+  type OpenMbeeEndpoint,
+  type OpenMbeeImportResult,
   type Project,
   type SysMLModel,
   type VersionBranch,
@@ -381,6 +527,17 @@ const selected = ref<SysMLModel | null>(null)
 const selectedElement = ref<ModelElement | null>(null)
 const loading = ref(false)
 const file = ref<File | null>(null)
+const importSource = ref<'local' | 'mms' | 'jupyter'>('local')
+const openMbeeLoading = ref(false)
+const openMbeeTesting = ref(false)
+const mmsProjectsLoading = ref(false)
+const mmsRefsLoading = ref(false)
+const mmsImporting = ref(false)
+const openMbeeConfig = ref<OpenMbeeConfig | null>(null)
+const openMbeeEndpoints = ref<OpenMbeeEndpoint[]>([])
+const mmsProjects = ref<Record<string, unknown>[]>([])
+const mmsRefs = ref<Record<string, unknown>[]>([])
+const mmsImportResult = ref<OpenMbeeImportResult | null>(null)
 const upload = reactive({
   project_id: undefined as number | undefined,
   name: '',
@@ -388,6 +545,21 @@ const upload = reactive({
   branch_name: 'main',
   version_tag: '',
 })
+const mmsImportForm = reactive({
+  local_project_id: undefined as number | undefined,
+  name: '',
+  description: '',
+  mms_project_id: '',
+  ref_id: 'master',
+  root_element_id: '',
+  commit_id: '',
+  search_keyword: '',
+  element_type: '',
+  limit: 200,
+  depth: undefined as number | undefined,
+})
+const jupyterUrl = 'http://127.0.0.1:8888/lab/tree/notebooks/sysml_docgen_openmbee_demo.ipynb'
+const jupyterCommand = 'powershell -ExecutionPolicy Bypass -File .\\scripts\\start_jupyter.ps1'
 const modelDialog = ref(false)
 const editingModelId = ref<number>()
 const modelForm = reactive({ name: '', description: '' })
@@ -555,13 +727,109 @@ function onFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0] || null
 }
 
+function handleImportTabChange(name: string | number | TabsPaneContext) {
+  if (name === 'mms' && !openMbeeEndpoints.value.length) {
+    loadOpenMbeeInfo()
+  }
+}
+
+async function loadOpenMbeeInfo() {
+  openMbeeLoading.value = true
+  try {
+    const [config, endpoints] = await Promise.all([openMbeeApi.config(), openMbeeApi.endpoints()])
+    openMbeeConfig.value = config
+    openMbeeEndpoints.value = endpoints
+  } catch (error) {
+    ElMessage.error(apiError(error, '加载 OpenMBEE 接口信息失败'))
+  } finally {
+    openMbeeLoading.value = false
+  }
+}
+
+async function testMmsConnection() {
+  openMbeeTesting.value = true
+  try {
+    await openMbeeApi.mmsVersion()
+    ElMessage.success('MMS 连接成功')
+  } catch (error) {
+    ElMessage.error(apiError(error, 'MMS 连接失败'))
+  } finally {
+    openMbeeTesting.value = false
+  }
+}
+
+async function loadMmsProjects() {
+  mmsProjectsLoading.value = true
+  try {
+    const result = await openMbeeApi.projects()
+    mmsProjects.value = extractMmsList(result.data)
+    ElMessage.success(`已获取 ${mmsProjects.value.length} 个 MMS 项目`)
+  } catch (error) {
+    ElMessage.error(apiError(error, '获取 MMS 项目失败'))
+  } finally {
+    mmsProjectsLoading.value = false
+  }
+}
+
+async function loadMmsRefs() {
+  if (!mmsImportForm.mms_project_id) return
+  mmsRefsLoading.value = true
+  try {
+    const result = await openMbeeApi.refs(mmsImportForm.mms_project_id)
+    mmsRefs.value = extractMmsList(result.data)
+    ElMessage.success(`已获取 ${mmsRefs.value.length} 个分支`)
+  } catch (error) {
+    ElMessage.error(apiError(error, '获取 MMS 分支失败'))
+  } finally {
+    mmsRefsLoading.value = false
+  }
+}
+
+async function importFromMms() {
+  if (!mmsImportForm.local_project_id || !mmsImportForm.name.trim() || !mmsImportForm.mms_project_id || !mmsImportForm.ref_id) {
+    ElMessage.warning('请填写本地项目、模型名称、MMS 项目和分支')
+    return
+  }
+  if (!mmsImportForm.root_element_id.trim() && !mmsImportForm.search_keyword.trim()) {
+    ElMessage.warning('请填写根元素 ID 或搜索关键词')
+    return
+  }
+  mmsImporting.value = true
+  try {
+    mmsImportResult.value = await openMbeeApi.importModel({
+      local_project_id: mmsImportForm.local_project_id,
+      name: mmsImportForm.name,
+      description: mmsImportForm.description || undefined,
+      mms_project_id: mmsImportForm.mms_project_id,
+      ref_id: mmsImportForm.ref_id,
+      root_element_id: mmsImportForm.root_element_id || undefined,
+      commit_id: mmsImportForm.commit_id || undefined,
+      search_keyword: mmsImportForm.search_keyword || undefined,
+      element_type: mmsImportForm.element_type || undefined,
+      limit: mmsImportForm.limit,
+      depth: mmsImportForm.depth,
+    })
+    ElMessage.success('OpenMBEE 模型已导入')
+    models.value = await modelApi.list()
+    await loadModelVersioning()
+  } catch (error) {
+    ElMessage.error(apiError(error, '导入 OpenMBEE 模型失败'))
+  } finally {
+    mmsImporting.value = false
+  }
+}
+
 async function load() {
   projects.value = await projectApi.list()
   models.value = await modelApi.list()
+  if (!mmsImportForm.local_project_id && projects.value.length) {
+    mmsImportForm.local_project_id = projects.value[0].id
+  }
   if (!versionProjectId.value && projects.value.length) {
     versionProjectId.value = projects.value[0].id
   }
   await loadModelVersioning()
+  await loadOpenMbeeInfo()
 }
 
 async function submit() {
@@ -702,6 +970,55 @@ function modelLabel(model?: SysMLModel) {
 
 function branchName(id?: number) {
   return id ? branches.value.find((branch) => branch.id === id)?.name || `#${id}` : '未关联'
+}
+
+function extractMmsList(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter(isRecord)
+  if (!isRecord(value)) return []
+  for (const key of ['projects', 'refs', 'elements', 'items', 'results', 'data']) {
+    const nested = value[key]
+    if (Array.isArray(nested)) return nested.filter(isRecord)
+    if (isRecord(nested)) {
+      const result = extractMmsList(nested)
+      if (result.length) return result
+    }
+  }
+  return []
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function mmsItemId(item: Record<string, unknown>) {
+  return String(item.id || item._id || item.projectId || item.refId || item.name || '')
+}
+
+function mmsItemLabel(item: Record<string, unknown>) {
+  const id = mmsItemId(item)
+  const name = String(item.name || item._name || item.title || id)
+  return id && id !== name ? `${name} (${id})` : name
+}
+
+async function copyToClipboard(value: string) {
+  try {
+    await navigator.clipboard.writeText(value)
+    ElMessage.success('已复制')
+  } catch {
+    const textarea = document.createElement('textarea')
+    textarea.value = value
+    textarea.style.position = 'fixed'
+    textarea.style.left = '-9999px'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    textarea.remove()
+    ElMessage.success('已复制')
+  }
+}
+
+function openJupyter() {
+  window.open(jupyterUrl, '_blank', 'noopener')
 }
 
 function editModel(row: SysMLModel) {
@@ -954,7 +1271,7 @@ onMounted(load)
 
 .upload-fields {
   display: grid;
-  grid-template-columns: repeat(6, minmax(140px, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   flex: 1;
   min-width: 0;
@@ -976,6 +1293,132 @@ onMounted(load)
   padding: 4px 0;
 }
 
+.ingest-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+}
+
+.integration-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.integration-summary {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-soft);
+}
+
+.integration-summary > div:first-child {
+  flex: 1 1 360px;
+  min-width: 0;
+}
+
+.integration-summary h3 {
+  margin: 0 0 6px;
+  color: var(--brand-dark);
+  font-size: 17px;
+}
+
+.integration-summary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.integration-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  flex: 0 0 auto;
+  max-width: 100%;
+}
+
+.integration-actions .el-button,
+.mms-form-actions .el-button {
+  margin-left: 0;
+  white-space: normal;
+}
+
+.integration-desc {
+  margin-top: 2px;
+}
+
+.endpoint-table {
+  margin-top: 2px;
+}
+
+.mms-import-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.mms-import-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.mms-import-form :deep(.el-select),
+.mms-import-form :deep(.el-input),
+.mms-import-form :deep(.el-input-number) {
+  width: 100%;
+}
+
+.mms-form-actions {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+  justify-content: flex-end;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.jupyter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.command-box {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.command-box span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.command-box pre {
+  margin: 0;
+  max-width: 100%;
+  overflow: auto;
+  color: var(--ink);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .card-header,
 .compare-toolbar,
 .filter-bar {
@@ -983,6 +1426,11 @@ onMounted(load)
   gap: 12px;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
+}
+
+.card-header {
+  flex-wrap: wrap;
 }
 
 .filter-bar {
@@ -1036,6 +1484,7 @@ onMounted(load)
   display: flex;
   gap: 14px;
   align-items: center;
+  flex-wrap: wrap;
   margin-bottom: 8px;
   color: var(--muted);
   font-size: 13px;
@@ -1045,6 +1494,14 @@ onMounted(load)
   display: flex;
   gap: 10px;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.graph-actions .muted {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .legend-dot {
@@ -1259,9 +1716,17 @@ onMounted(load)
 
 @media (max-width: 1180px) {
   .upload-fields,
+  .jupyter-grid,
+  .mms-import-form,
   .version-grid,
   .compare-grid {
     grid-template-columns: 1fr;
+  }
+  .integration-summary {
+    flex-direction: column;
+  }
+  .integration-actions {
+    justify-content: flex-start;
   }
 }
 </style>

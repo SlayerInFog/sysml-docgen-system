@@ -175,6 +175,46 @@ export interface GeneratedDocument {
   created_at: string
 }
 
+export interface OpenMbeeConfig {
+  mms_configured: boolean
+  doc_convert_configured: boolean
+  mms_url?: string
+  doc_convert_url?: string
+}
+
+export interface OpenMbeeEndpoint {
+  name: string
+  method: string
+  path: string
+  description: string
+}
+
+export interface OpenMbeeProxyResponse<T = unknown> {
+  source_url: string
+  data: T
+}
+
+export interface OpenMbeeImportRequest {
+  local_project_id: number
+  name: string
+  description?: string
+  mms_project_id: string
+  ref_id: string
+  root_element_id?: string
+  commit_id?: string
+  search_keyword?: string
+  element_type?: string
+  limit?: number
+  depth?: number
+}
+
+export interface OpenMbeeImportResult {
+  model: SysMLModel
+  source_url: string
+  imported_elements: number
+  imported_relations: number
+}
+
 export const authApi = {
   register: (data: Record<string, unknown>) => http.post<User>('/auth/register', data).then((r) => r.data),
   login: (data: { username: string; password: string }) =>
@@ -292,4 +332,35 @@ export const auditApi = {
     limit?: number
   }) =>
     http.get('/audit/logs', { params }).then((r) => r.data),
+}
+
+export const openMbeeApi = {
+  config: () => http.get<OpenMbeeConfig>('/openmbee/config').then((r) => r.data),
+  endpoints: () => http.get<OpenMbeeEndpoint[]>('/openmbee/mms/endpoints').then((r) => r.data),
+  mmsVersion: () => http.get<OpenMbeeProxyResponse>('/openmbee/mms/version').then((r) => r.data),
+  projects: (orgId?: string) =>
+    http
+      .get<OpenMbeeProxyResponse>('/openmbee/mms/projects', { params: orgId ? { org_id: orgId } : {} })
+      .then((r) => r.data),
+  refs: (projectId: string) =>
+    http.get<OpenMbeeProxyResponse>(`/openmbee/mms/projects/${projectId}/refs`).then((r) => r.data),
+  element: (
+    projectId: string,
+    refId: string,
+    elementId: string,
+    params?: { commit_id?: string; recurse?: boolean; depth?: number },
+  ) =>
+    http
+      .get<OpenMbeeProxyResponse>(`/openmbee/mms/projects/${projectId}/refs/${refId}/elements/${elementId}`, { params })
+      .then((r) => r.data),
+  search: (
+    projectId: string,
+    refId: string,
+    params?: { keyword?: string; element_type?: string; limit?: number },
+  ) =>
+    http
+      .get<OpenMbeeProxyResponse>(`/openmbee/mms/projects/${projectId}/refs/${refId}/search`, { params })
+      .then((r) => r.data),
+  importModel: (data: OpenMbeeImportRequest) =>
+    http.post<OpenMbeeImportResult>('/openmbee/mms/import', data).then((r) => r.data),
 }

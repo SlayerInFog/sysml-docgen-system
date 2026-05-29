@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 480
     upload_dir: str = "app/uploads"
     generated_dir: str = "app/generated"
+    openmbee_mms_url: str | None = None
+    openmbee_mms_token: str | None = None
+    openmbee_doc_convert_url: str | None = None
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
