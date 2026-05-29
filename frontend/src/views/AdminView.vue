@@ -12,7 +12,7 @@
             <el-select
               v-model="row.role"
               size="small"
-              :disabled="savingUserId === row.id || row.id === auth.user?.id"
+              :disabled="isProtectedAdmin(row) || savingUserId === row.id"
               @change="updateUser(row, { role: row.role })"
             >
               <el-option label="管理员" value="admin" disabled />
@@ -25,7 +25,7 @@
           <template #default="{ row }">
             <el-switch
               v-model="row.is_active"
-              :disabled="savingUserId === row.id || row.id === auth.user?.id"
+              :disabled="isProtectedAdmin(row) || savingUserId === row.id"
               @change="updateUser(row, { is_active: row.is_active })"
             />
           </template>
@@ -137,6 +137,11 @@ async function loadUsers() {
 }
 
 async function updateUser(user: User, data: { role?: User['role']; is_active?: boolean }) {
+  if (isProtectedAdmin(user)) {
+    ElMessage.warning('管理员身份账户不可修改角色或启用状态')
+    await loadUsers()
+    return
+  }
   if (user.id === auth.user?.id && (data.role !== undefined || data.is_active === false)) {
     ElMessage.warning('不能修改当前登录管理员的角色或停用当前账号')
     await loadUsers()
@@ -155,6 +160,10 @@ async function updateUser(user: User, data: { role?: User['role']; is_active?: b
   } finally {
     savingUserId.value = undefined
   }
+}
+
+function isProtectedAdmin(user: User) {
+  return user.role === 'admin'
 }
 
 function resetFilters() {

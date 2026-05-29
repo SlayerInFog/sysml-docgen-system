@@ -41,7 +41,7 @@ a {
 
 .toolbar {
   display: flex;
-  gap: 8px;
+  gap: 14px;
   align-items: center;
   flex-wrap: wrap;
   margin-bottom: 16px;
@@ -56,11 +56,11 @@ a {
 }
 
 .table-actions {
-  gap: 6px;
+  gap: 14px;
 }
 
 .table-export-actions {
-  gap: 8px;
+  gap: 14px;
 }
 
 .table-actions .el-button,
@@ -69,7 +69,7 @@ a {
 }
 
 .table-actions .el-button.is-text {
-  padding: 0 2px;
+  padding: 0 4px;
 }
 
 .table-actions-cell .cell {
@@ -83,7 +83,7 @@ a {
 .upload-actions,
 .member-add,
 .compare-toolbar {
-  gap: 8px;
+  gap: 14px;
 }
 
 .el-dialog__footer .el-button + .el-button,

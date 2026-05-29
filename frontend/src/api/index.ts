@@ -38,6 +38,8 @@ export interface SysMLModel {
   description?: string
   source_filename: string
   version: number
+  branch_name: string
+  version_tag?: string
   status: string
   uploaded_by: number
   created_at: string
@@ -151,6 +153,9 @@ export const modelApi = {
   list: (projectId?: number) =>
     http.get<SysMLModel[]>('/models', { params: projectId ? { project_id: projectId } : {} }).then((r) => r.data),
   upload: (form: FormData) => http.post<SysMLModel>('/models/upload', form).then((r) => r.data),
+  update: (id: number, data: { name?: string; description?: string }) =>
+    http.patch<SysMLModel>(`/models/${id}`, data).then((r) => r.data),
+  remove: (id: number) => http.delete(`/models/${id}`).then((r) => r.data),
   elements: (modelId: number) => http.get<ModelElement[]>(`/models/${modelId}/elements`).then((r) => r.data),
   graph: (modelId: number) =>
     http.get<{ elements: ModelElement[]; relations: ModelRelation[] }>(`/models/${modelId}/graph`).then((r) => r.data),

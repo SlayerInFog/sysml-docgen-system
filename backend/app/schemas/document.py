@@ -8,12 +8,16 @@ class TemplateCreate(BaseModel):
     name: str
     description: str | None = None
     content: str
+    branch_name: str | None = None
+    version_tag: str | None = None
 
 
 class TemplateUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
     content: str | None = None
+    branch_name: str | None = None
+    version_tag: str | None = None
 
 
 class TemplatePreviewRequest(BaseModel):
@@ -30,6 +34,8 @@ class TemplateOut(BaseModel):
     description: str | None
     content: str
     version: int
+    branch_name: str
+    version_tag: str | None
     created_at: datetime
 
 
@@ -42,6 +48,8 @@ class TemplateVersionOut(BaseModel):
     name: str
     description: str | None
     content: str
+    branch_name: str
+    version_tag: str | None
     created_by: int | None
     created_at: datetime
 

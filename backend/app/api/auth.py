@@ -74,6 +74,8 @@ def update_user(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.role == "admin" and (payload.role is not None or payload.is_active is not None):
+        raise HTTPException(status_code=400, detail="Admin accounts cannot be modified")
     if payload.role is not None:
         if user.id == admin.id:
             raise HTTPException(status_code=400, detail="Cannot change the current admin role")

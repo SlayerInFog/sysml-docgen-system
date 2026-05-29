@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
 from app.api.projects import has_project_role
 from app.models.project import Project, ProjectMember
+from app.models.document import GeneratedDocument
 from app.models.sysml import ModelElement, ModelRelation, SysMLModel
 from app.models.user import User
 from app.schemas.sysml import (
@@ -22,6 +23,7 @@ from app.schemas.sysml import (
     ModelRelationOut,
     RelationCompareItem,
     SysMLModelOut,
+    SysMLModelUpdate,
 )
 from app.services.audit import write_log
 from app.services.sysml_parser import parse_model_file
@@ -35,6 +37,8 @@ def upload_model(
     project_id: int = Form(...),
     name: str = Form(...),
     description: str | None = Form(None),
+    branch_name: str = Form("main"),
+    version_tag: str | None = Form(None),
     file: UploadFile = File(...),
     user: User = Depends(require_roles("admin", "author")),
     db: Session = Depends(get_db),
@@ -44,6 +48,11 @@ def upload_model(
         raise HTTPException(status_code=404, detail="项目不存在")
     if not has_project_role(db, project.id, user, {"manager", "editor"}):
         raise HTTPException(status_code=403, detail="权限不足")
+
+    normalized_branch = _normalize_branch(branch_name)
+    normalized_tag = _normalize_tag(version_tag)
+    if normalized_tag and _model_tag_exists(db, project_id, name, normalized_tag):
+        raise HTTPException(status_code=400, detail="Version tag already exists for this model")
 
     suffix = Path(file.filename or "model.xmi").suffix or ".xmi"
     stored_name = f"{uuid4().hex}{suffix}"
@@ -59,7 +68,7 @@ def upload_model(
 
     latest = (
         db.query(SysMLModel)
-        .filter(SysMLModel.project_id == project_id, SysMLModel.name == name)
+        .filter(SysMLModel.project_id == project_id, SysMLModel.name == name, SysMLModel.branch_name == normalized_branch)
         .order_by(SysMLModel.version.desc())
         .first()
     )
@@ -70,6 +79,8 @@ def upload_model(
         source_filename=file.filename or stored_name,
         stored_path=str(stored_path),
         version=(latest.version + 1) if latest else 1,
+        branch_name=normalized_branch,
+        version_tag=normalized_tag,
         uploaded_by=user.id,
         status="parsed",
     )
@@ -114,6 +125,50 @@ def list_models(project_id: int | None = None, user: User = Depends(get_current_
             (Project.owner_id == user.id) | (ProjectMember.user_id == user.id)
         )
     return query.order_by(SysMLModel.created_at.desc()).all()
+
+
+@router.patch("/{model_id}", response_model=SysMLModelOut)
+def update_model(
+    model_id: int,
+    payload: SysMLModelUpdate,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> SysMLModel:
+    model = ensure_model_access(db, model_id, user)
+    if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    if payload.name is not None:
+        model.name = payload.name[:160]
+    if payload.description is not None:
+        model.description = payload.description
+    db.commit()
+    db.refresh(model)
+    write_log(db, user, "update_model", "model", model.id, model.name)
+    return model
+
+
+@router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_model(
+    model_id: int,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> None:
+    model = ensure_model_access(db, model_id, user)
+    if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
+        raise HTTPException(status_code=403, detail="Permission denied")
+    used_count = db.query(GeneratedDocument).filter(GeneratedDocument.model_id == model.id).count()
+    if used_count:
+        raise HTTPException(status_code=400, detail="Model has generated documents and cannot be deleted")
+    stored_path = Path(model.stored_path) if model.stored_path else None
+    model_name = model.name
+    db.delete(model)
+    db.commit()
+    if stored_path and stored_path.exists():
+        try:
+            stored_path.unlink()
+        except OSError:
+            pass
+    write_log(db, user, "delete_model", "model", model_id, model_name)
 
 
 @router.get("/compare", response_model=ModelCompareOut)
@@ -236,4 +291,22 @@ def _relation_compare_item(relation: tuple[str, str, str, str]) -> RelationCompa
         target_uid=target_uid,
         relation_type=relation_type,
         label=label or None,
+    )
+
+
+def _normalize_branch(value: str | None) -> str:
+    branch = (value or "main").strip()
+    return branch[:80] or "main"
+
+
+def _normalize_tag(value: str | None) -> str | None:
+    tag = (value or "").strip()
+    return tag[:80] or None
+
+
+def _model_tag_exists(db: Session, project_id: int, name: str, tag: str) -> bool:
+    return bool(
+        db.query(SysMLModel)
+        .filter(SysMLModel.project_id == project_id, SysMLModel.name == name, SysMLModel.version_tag == tag)
+        .first()
     )

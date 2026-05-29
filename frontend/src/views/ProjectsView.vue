@@ -135,7 +135,6 @@ function resetForm() {
 
 function cancelDialog() {
   dialog.value = false
-  resetForm()
 }
 
 async function save() {
@@ -148,7 +147,6 @@ async function save() {
       ElMessage.success('项目创建成功')
     }
     dialog.value = false
-    resetForm()
     await load()
   } catch (error) {
     ElMessage.error(apiError(error, '保存失败'))

@@ -12,6 +12,8 @@
           </el-form-item>
           <el-form-item label="模型名称"><el-input v-model="upload.name" /></el-form-item>
           <el-form-item label="模型说明"><el-input v-model="upload.description" /></el-form-item>
+          <el-form-item label="分支"><el-input v-model="upload.branch_name" placeholder="main" /></el-form-item>
+          <el-form-item label="标记"><el-input v-model="upload.version_tag" placeholder="例如 v1.0-baseline" /></el-form-item>
           <el-form-item label="模型文件">
             <input class="file-input" type="file" accept=".xmi,.xml,.json,.uml,.sysml,.mms" @change="onFile" />
           </el-form-item>
@@ -28,11 +30,23 @@
         <el-table-column prop="name" label="模型名称" />
         <el-table-column prop="description" label="说明" />
         <el-table-column prop="version" label="版本" width="80" />
+        <el-table-column prop="branch_name" label="分支" width="120" />
+        <el-table-column label="标记" width="140">
+          <template #default="{ row }">{{ row.version_tag || '-' }}</template>
+        </el-table-column>
         <el-table-column prop="source_filename" label="源文件" />
         <el-table-column label="状态" width="100">
           <template #default="{ row }">{{ statusLabel(row.status) }}</template>
         </el-table-column>
         <el-table-column prop="created_at" label="上传时间" />
+        <el-table-column label="操作" width="150" fixed="right" class-name="table-actions-cell">
+          <template #default="{ row }">
+            <div class="table-actions">
+              <el-button text type="primary" @click.stop="editModel(row)">编辑</el-button>
+              <el-button text type="danger" @click.stop="removeModel(row)">删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
 
@@ -185,7 +199,7 @@
           <el-option
             v-for="item in comparableModels"
             :key="item.id"
-            :label="`${item.name} v${item.version}`"
+            :label="modelVersionLabel(item)"
             :value="item.id"
           />
         </el-select>
@@ -228,6 +242,17 @@
       <el-empty v-else description="选择同项目模型版本后可查看差异" />
     </el-card>
 
+    <el-dialog v-model="modelDialog" title="编辑模型" width="560px" @closed="resetModelForm">
+      <el-form label-position="top">
+        <el-form-item label="模型名称"><el-input v-model="modelForm.name" /></el-form-item>
+        <el-form-item label="模型说明"><el-input v-model="modelForm.description" type="textarea" :rows="4" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="modelDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveModel">保存</el-button>
+      </template>
+    </el-dialog>
+
     <el-dialog v-model="editDialog" title="轻量编辑模型元素" width="560px">
       <el-form v-if="editing" label-position="top">
         <el-form-item label="名称"><el-input v-model="editing.name" /></el-form-item>
@@ -244,7 +269,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import type { TreeInstance } from 'element-plus'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError } from '@/api/http'
 import {
   modelApi,
@@ -271,7 +296,16 @@ const selected = ref<SysMLModel | null>(null)
 const selectedElement = ref<ModelElement | null>(null)
 const loading = ref(false)
 const file = ref<File | null>(null)
-const upload = reactive({ project_id: undefined as number | undefined, name: '', description: '' })
+const upload = reactive({
+  project_id: undefined as number | undefined,
+  name: '',
+  description: '',
+  branch_name: 'main',
+  version_tag: '',
+})
+const modelDialog = ref(false)
+const editingModelId = ref<number>()
+const modelForm = reactive({ name: '', description: '' })
 const editDialog = ref(false)
 const editing = ref<ModelElement | null>(null)
 const targetModelId = ref<number>()
@@ -444,6 +478,8 @@ async function submit() {
     form.append('project_id', String(upload.project_id))
     form.append('name', upload.name)
     form.append('description', upload.description)
+    form.append('branch_name', upload.branch_name || 'main')
+    if (upload.version_tag) form.append('version_tag', upload.version_tag)
     form.append('file', file.value)
     await modelApi.upload(form)
     ElMessage.success('上传解析成功')
@@ -464,6 +500,54 @@ async function selectModel(row: SysMLModel) {
   const graph = await modelApi.graph(row.id)
   elements.value = graph.elements
   relations.value = graph.relations
+}
+function editModel(row: SysMLModel) {
+  editingModelId.value = row.id
+  Object.assign(modelForm, {
+    name: row.name,
+    description: row.description || '',
+  })
+  modelDialog.value = true
+}
+async function saveModel() {
+  if (!editingModelId.value) return
+  try {
+    const updated = await modelApi.update(editingModelId.value, {
+      name: modelForm.name,
+      description: modelForm.description,
+    })
+    const index = models.value.findIndex((item) => item.id === updated.id)
+    if (index >= 0) models.value[index] = updated
+    if (selected.value?.id === updated.id) selected.value = updated
+    modelDialog.value = false
+    ElMessage.success('模型已更新')
+  } catch (error) {
+    ElMessage.error(apiError(error, '更新模型失败'))
+  }
+}
+async function removeModel(row: SysMLModel) {
+  try {
+    await ElMessageBox.confirm(`删除模型“${row.name}”？模型元素和关系会一并删除。`, '确认删除', { type: 'warning' })
+    await modelApi.remove(row.id)
+    ElMessage.success('模型已删除')
+    if (selected.value?.id === row.id) {
+      selected.value = null
+      selectedElement.value = null
+      elements.value = []
+      relations.value = []
+      compareResult.value = null
+      targetModelId.value = undefined
+    }
+    await load()
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(apiError(error, '删除模型失败'))
+    }
+  }
+}
+function resetModelForm() {
+  editingModelId.value = undefined
+  Object.assign(modelForm, { name: '', description: '' })
 }
 function focusElement(row: ModelElement) {
   selectedElement.value = row
@@ -573,6 +657,10 @@ function statusLabel(status: string) {
     }[status] || status
   )
 }
+function modelVersionLabel(model: SysMLModel) {
+  const tag = model.version_tag ? ` @ ${model.version_tag}` : ''
+  return `${model.name} ${model.branch_name} v${model.version}${tag}`
+}
 function clearFocus() {
   selectedElement.value = null
   modelTreeRef.value?.setCurrentKey()
@@ -638,7 +726,7 @@ onMounted(load)
 }
 .upload-fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  grid-template-columns: repeat(6, minmax(140px, 1fr));
   gap: 12px;
   flex: 1;
   min-width: 0;

@@ -16,6 +16,8 @@ class DocumentTemplate(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(LONGTEXT().with_variant(Text, "sqlite"))
     version: Mapped[int] = mapped_column(Integer, default=1)
+    branch_name: Mapped[str] = mapped_column(String(80), default="main")
+    version_tag: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -33,6 +35,8 @@ class DocumentTemplateVersion(Base):
     name: Mapped[str] = mapped_column(String(160), index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     content: Mapped[str] = mapped_column(LONGTEXT().with_variant(Text, "sqlite"))
+    branch_name: Mapped[str] = mapped_column(String(80), default="main")
+    version_tag: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

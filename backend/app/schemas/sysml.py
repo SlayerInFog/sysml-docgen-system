@@ -12,9 +12,16 @@ class SysMLModelOut(BaseModel):
     description: str | None
     source_filename: str
     version: int
+    branch_name: str
+    version_tag: str | None
     status: str
     uploaded_by: int
     created_at: datetime
+
+
+class SysMLModelUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
 
 
 class ModelElementUpdate(BaseModel):

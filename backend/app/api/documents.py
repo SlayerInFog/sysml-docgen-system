@@ -3,6 +3,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from jinja2 import Template
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -46,11 +47,17 @@ def create_template(
             raise HTTPException(status_code=404, detail="项目不存在")
         if not has_project_role(db, project.id, user, {"manager", "editor"}):
             raise HTTPException(status_code=403, detail="权限不足")
+    branch_name = _normalize_branch(payload.branch_name)
+    version_tag = _normalize_tag(payload.version_tag)
+    if version_tag and _template_tag_exists(db, payload.project_id, payload.name, version_tag):
+        raise HTTPException(status_code=400, detail="Version tag already exists for this template")
     template = DocumentTemplate(
         project_id=payload.project_id,
         name=payload.name,
         description=payload.description,
         content=payload.content,
+        branch_name=branch_name,
+        version_tag=version_tag,
     )
     db.add(template)
     db.flush()
@@ -83,7 +90,13 @@ def update_template(
     changed_metadata = (
         (payload.name is not None and payload.name != template.name)
         or (payload.description is not None and payload.description != template.description)
+        or (payload.branch_name is not None and _normalize_branch(payload.branch_name) != template.branch_name)
+        or (payload.version_tag is not None and _normalize_tag(payload.version_tag) != template.version_tag)
     )
+    next_name = payload.name if payload.name is not None else template.name
+    next_tag = _normalize_tag(payload.version_tag) if payload.version_tag is not None else template.version_tag
+    if next_tag and _template_tag_exists(db, template.project_id, next_name, next_tag, template.id):
+        raise HTTPException(status_code=400, detail="Version tag already exists for this template")
     next_version = template.version
     if changed_content or changed_metadata:
         next_version = template.version + 1
@@ -93,6 +106,10 @@ def update_template(
         template.description = payload.description
     if payload.content is not None:
         template.content = payload.content
+    if payload.branch_name is not None:
+        template.branch_name = _normalize_branch(payload.branch_name)
+    if payload.version_tag is not None:
+        template.version_tag = _normalize_tag(payload.version_tag)
     if changed_content or changed_metadata:
         template.version = next_version
         _save_template_version(db, template, user)
@@ -113,6 +130,7 @@ def delete_template(
     if used_count:
         raise HTTPException(status_code=400, detail="模板已被生成文档引用，不能删除")
     template_name = template.name
+    _delete_template_rollback_records(db, template_id)
     db.delete(template)
     db.commit()
     write_log(db, user, "delete_template", "template", template_id, template_name)
@@ -151,6 +169,8 @@ def rollback_template(
     template.name = version.name
     template.description = version.description
     template.content = version.content
+    template.branch_name = version.branch_name
+    template.version_tag = None
     template.version += 1
     _save_template_version(db, template, user)
     db.commit()
@@ -304,6 +324,8 @@ def create_default_template(
         name="默认 SysML 工程文档模板",
         description="参考 OpenMBEE DocGen 思路的轻量 HTML 模板",
         content=DEFAULT_TEMPLATE,
+        branch_name="main",
+        version_tag="default",
     )
     db.add(template)
     db.flush()
@@ -333,6 +355,12 @@ def _get_template_for_write(db: Session, template_id: int, user: User) -> Docume
 
 
 def _save_template_version(db: Session, template: DocumentTemplate, user: User) -> None:
+    if template.version_tag:
+        db.query(DocumentTemplateVersion).filter(
+            DocumentTemplateVersion.template_id == template.id,
+            DocumentTemplateVersion.version != template.version,
+            DocumentTemplateVersion.version_tag == template.version_tag,
+        ).update({"version_tag": None}, synchronize_session=False)
     exists = (
         db.query(DocumentTemplateVersion)
         .filter(DocumentTemplateVersion.template_id == template.id, DocumentTemplateVersion.version == template.version)
@@ -347,6 +375,55 @@ def _save_template_version(db: Session, template: DocumentTemplate, user: User) 
             name=template.name,
             description=template.description,
             content=template.content,
+            branch_name=template.branch_name,
+            version_tag=template.version_tag,
             created_by=user.id,
         )
     )
+
+
+def _delete_template_rollback_records(db: Session, template_id: int) -> None:
+    bind = db.get_bind()
+    inspector = inspect(bind)
+    if "version_rollback_records" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("version_rollback_records")}
+    reference_columns = [
+        column
+        for column in ("source_template_id", "target_template_id", "template_id")
+        if column in columns
+    ]
+    if not reference_columns:
+        return
+    conditions = " OR ".join(f"{column} = :template_id" for column in reference_columns)
+    db.execute(
+        text(f"DELETE FROM version_rollback_records WHERE {conditions}"),
+        {"template_id": template_id},
+    )
+
+
+def _normalize_branch(value: str | None) -> str:
+    branch = (value or "main").strip()
+    return branch[:80] or "main"
+
+
+def _normalize_tag(value: str | None) -> str | None:
+    tag = (value or "").strip()
+    return tag[:80] or None
+
+
+def _template_tag_exists(
+    db: Session,
+    project_id: int | None,
+    name: str,
+    tag: str,
+    exclude_template_id: int | None = None,
+) -> bool:
+    query = db.query(DocumentTemplateVersion).join(DocumentTemplate).filter(
+        DocumentTemplate.name == name,
+        DocumentTemplate.project_id.is_(None) if project_id is None else DocumentTemplate.project_id == project_id,
+        DocumentTemplateVersion.version_tag == tag,
+    )
+    if exclude_template_id is not None:
+        query = query.filter(DocumentTemplateVersion.template_id != exclude_template_id)
+    return bool(query.first())
