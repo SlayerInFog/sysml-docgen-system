@@ -21,7 +21,7 @@ def logs(
     keyword: str | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
-    limit: int = Query(200, ge=1, le=1000),
+    limit: int = Query(10, ge=1, le=1000),
     _: User = Depends(require_roles("admin")),
     db: Session = Depends(get_db),
 ) -> list[AuditLog]:

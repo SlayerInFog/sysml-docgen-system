@@ -114,7 +114,7 @@ const filters = reactive({
   keyword: '',
   start_time: '',
   end_time: '',
-  limit: 200,
+  limit: 10,
 })
 
 const actions = computed(() => [...new Set(logs.value.map((item) => item.action).filter(Boolean))])
@@ -173,7 +173,7 @@ function resetFilters() {
   filters.keyword = ''
   filters.start_time = ''
   filters.end_time = ''
-  filters.limit = 200
+  filters.limit = 10
   loadLogs()
 }
 

@@ -7,12 +7,12 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
+from app.api.projects import has_project_role
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
-from app.api.projects import has_project_role
-from app.models.project import Project, ProjectMember
 from app.models.document import GeneratedDocument
+from app.models.project import Project, ProjectMember
 from app.models.sysml import ModelElement, ModelRelation, SysMLModel
 from app.models.user import User
 from app.schemas.sysml import (
@@ -70,7 +70,11 @@ def upload_model(
 
     latest = (
         db.query(SysMLModel)
-        .filter(SysMLModel.project_id == project_id, SysMLModel.name == name, SysMLModel.branch_name == normalized_branch)
+        .filter(
+            SysMLModel.project_id == project_id,
+            SysMLModel.name == name,
+            SysMLModel.branch_name == normalized_branch,
+        )
         .order_by(SysMLModel.version.desc())
         .first()
     )
@@ -111,6 +115,7 @@ def upload_model(
                 label=relation.label,
             )
         )
+
     sync_model_branch_head(db, model, user)
     db.commit()
     db.refresh(model)
@@ -139,15 +144,22 @@ def update_model(
 ) -> SysMLModel:
     model = ensure_model_access(db, model_id, user)
     if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
-        raise HTTPException(status_code=403, detail="Permission denied")
-    if payload.name is not None:
-        model.name = payload.name[:160]
-    if payload.description is not None:
-        model.description = payload.description
+        raise HTTPException(status_code=403, detail="权限不足")
+
+    next_name = payload.name[:160] if payload.name is not None else model.name
+    next_description = payload.description if payload.description is not None else model.description
+    if next_name == model.name and next_description == model.description:
+        return model
+
+    new_model = _clone_model_for_update(db, model, user, status="edited")
+    new_model.name = next_name
+    new_model.description = next_description
+    sync_model_branch_head(db, new_model, user)
+
     db.commit()
-    db.refresh(model)
-    write_log(db, user, "update_model", "model", model.id, model.name)
-    return model
+    db.refresh(new_model)
+    write_log(db, user, "update_model", "model", new_model.id, f"from:{model.id}")
+    return new_model
 
 
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -158,21 +170,25 @@ def delete_model(
 ) -> None:
     model = ensure_model_access(db, model_id, user)
     if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
-        raise HTTPException(status_code=403, detail="Permission denied")
+        raise HTTPException(status_code=403, detail="权限不足")
+
     used_count = db.query(GeneratedDocument).filter(GeneratedDocument.model_id == model.id).count()
     if used_count:
         raise HTTPException(status_code=400, detail="Model has generated documents and cannot be deleted")
+
     stored_path = Path(model.stored_path) if model.stored_path else None
     model_name = model.name
     reassign_model_branch_heads_before_delete(db, model)
     _delete_model_versioning_records(db, model.id)
     db.delete(model)
     db.commit()
-    if stored_path and stored_path.exists():
+
+    if stored_path and stored_path.exists() and _can_remove_model_file(db, model):
         try:
             stored_path.unlink()
         except OSError:
             pass
+
     write_log(db, user, "delete_model", "model", model_id, model_name)
 
 
@@ -258,17 +274,33 @@ def update_element(
     element = db.query(ModelElement).filter(ModelElement.id == element_id).first()
     if not element:
         raise HTTPException(status_code=404, detail="模型元素不存在")
+
     model = ensure_model_access(db, element.model_id, user)
     if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
-        raise HTTPException(status_code=403, detail="Permission denied")
-    if payload.name is not None:
-        element.name = payload.name[:255]
-    if payload.documentation is not None:
-        element.documentation = payload.documentation
+        raise HTTPException(status_code=403, detail="权限不足")
+
+    next_name = payload.name[:255] if payload.name is not None else element.name
+    next_documentation = payload.documentation if payload.documentation is not None else element.documentation
+    if next_name == element.name and next_documentation == element.documentation:
+        return element
+
+    new_model = _clone_model_for_update(db, model, user, status="edited")
+    new_element = (
+        db.query(ModelElement)
+        .filter(ModelElement.model_id == new_model.id, ModelElement.element_uid == element.element_uid)
+        .first()
+    )
+    if not new_element:
+        raise HTTPException(status_code=500, detail="创建元素编辑版本失败")
+
+    new_element.name = next_name
+    new_element.documentation = next_documentation
+    sync_model_branch_head(db, new_model, user)
+
     db.commit()
-    db.refresh(element)
-    write_log(db, user, "update_element", "element", element.id, element.name)
-    return element
+    db.refresh(new_element)
+    write_log(db, user, "update_element", "element", new_element.id, f"from:{element.id}")
+    return new_element
 
 
 def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
@@ -342,3 +374,67 @@ def _delete_model_versioning_records(db: Session, model_id: int) -> None:
             text("DELETE FROM version_tags WHERE model_id = :model_id"),
             {"model_id": model_id},
         )
+
+
+def _can_remove_model_file(db: Session, model: SysMLModel) -> bool:
+    if not model.stored_path:
+        return False
+    sibling = (
+        db.query(SysMLModel.id)
+        .filter(SysMLModel.stored_path == model.stored_path, SysMLModel.id != model.id)
+        .first()
+    )
+    return sibling is None
+
+
+def _clone_model_for_update(db: Session, source_model: SysMLModel, user: User, status: str) -> SysMLModel:
+    latest = (
+        db.query(SysMLModel)
+        .filter(
+            SysMLModel.project_id == source_model.project_id,
+            SysMLModel.name == source_model.name,
+            SysMLModel.branch_name == source_model.branch_name,
+        )
+        .order_by(SysMLModel.version.desc())
+        .first()
+    )
+    new_model = SysMLModel(
+        project_id=source_model.project_id,
+        name=source_model.name,
+        description=source_model.description,
+        source_filename=f"{status}-{source_model.source_filename}"[:255],
+        stored_path=source_model.stored_path,
+        version=(latest.version + 1) if latest else source_model.version + 1,
+        branch_name=source_model.branch_name,
+        version_tag=None,
+        uploaded_by=user.id,
+        status=status,
+    )
+    db.add(new_model)
+    db.flush()
+
+    for source_element in db.query(ModelElement).filter(ModelElement.model_id == source_model.id).all():
+        db.add(
+            ModelElement(
+                model_id=new_model.id,
+                element_uid=source_element.element_uid,
+                name=source_element.name,
+                type=source_element.type,
+                documentation=source_element.documentation,
+                parent_uid=source_element.parent_uid,
+                raw_json=source_element.raw_json,
+            )
+        )
+    for source_relation in db.query(ModelRelation).filter(ModelRelation.model_id == source_model.id).all():
+        db.add(
+            ModelRelation(
+                model_id=new_model.id,
+                source_uid=source_relation.source_uid,
+                target_uid=source_relation.target_uid,
+                relation_type=source_relation.relation_type,
+                label=source_relation.label,
+            )
+        )
+
+    db.flush()
+    return new_model

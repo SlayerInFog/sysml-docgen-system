@@ -1118,9 +1118,10 @@ async function saveModel() {
       name: modelForm.name,
       description: modelForm.description,
     })
-    const index = models.value.findIndex((item) => item.id === updated.id)
-    if (index >= 0) models.value[index] = updated
-    if (selected.value?.id === updated.id) selected.value = updated
+    models.value = await modelApi.list()
+    const nextModel = models.value.find((item) => item.id === updated.id) || updated
+    await selectModel(nextModel)
+    await loadModelVersioning()
     modelDialog.value = false
     ElMessage.success('模型已更新')
   } catch (error) {
@@ -1178,15 +1179,29 @@ function editElement(row: ModelElement) {
 
 async function saveElement() {
   if (!editing.value) return
-  const updated = await modelApi.updateElement(editing.value.id, {
-    name: editing.value.name,
-    documentation: editing.value.documentation,
-  })
-  const index = elements.value.findIndex((item) => item.id === updated.id)
-  if (index >= 0) elements.value[index] = updated
-  if (selectedElement.value?.id === updated.id) selectedElement.value = updated
-  editDialog.value = false
-  ElMessage.success('元素已更新')
+  try {
+    const updated = await modelApi.updateElement(editing.value.id, {
+      name: editing.value.name,
+      documentation: editing.value.documentation,
+    })
+    models.value = await modelApi.list()
+    const nextModel = models.value.find((item) => item.id === updated.model_id)
+    if (nextModel) {
+      await selectModel(nextModel)
+      const nextElement =
+        elements.value.find((item) => item.id === updated.id) ||
+        elements.value.find((item) => item.element_uid === updated.element_uid)
+      if (nextElement) {
+        selectedElement.value = nextElement
+        await syncTreeSelection(nextElement.element_uid)
+      }
+    }
+    await loadModelVersioning()
+    editDialog.value = false
+    ElMessage.success('元素已更新')
+  } catch (error) {
+    ElMessage.error(apiError(error, '修改元素失败'))
+  }
 }
 
 async function loadCompare() {
@@ -1270,6 +1285,7 @@ function statusLabel(status: string) {
       failed: '解析失败',
       uploaded: '已上传',
       rollback: '回滚版本',
+      edited: '编辑版本',
     }[status] || status
   )
 }
