@@ -1,0 +1,13 @@
+{
+  "base_url": "/",
+  "hostname": "127.0.0.1",
+  "password": false,
+  "pid": 14100,
+  "port": 8888,
+  "root_dir": "D:\\\u684c\u9762\\zdp\u8bfe\u8bbe\\sysml-docgen-system",
+  "secure": false,
+  "sock": "",
+  "token": "",
+  "url": "http://127.0.0.1:8888/",
+  "version": "2.19.0"
+}

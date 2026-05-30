@@ -4,11 +4,17 @@
 
 ## 环境位置
 
-```powershell
-E:\sysml\jupyter-env
+启动脚本会按顺序查找以下位置：
+
+```text
+.\.venv\Scripts\jupyter-lab.exe
+.\jupyter-env\Scripts\jupyter-lab.exe
+..\jupyter-env\Scripts\jupyter-lab.exe
 ```
 
-已安装：
+如果上述位置都不存在，则使用系统 PATH 中的 `jupyter-lab`。
+
+建议环境中安装：
 
 ```text
 jupyterlab
@@ -19,22 +25,25 @@ pandas
 
 ## 启动后端
 
+在项目根目录执行：
+
 ```powershell
-cd E:\sysml\sysml-docgen-system\backend
+cd .\backend
 python run.py
 ```
 
 ## 启动 JupyterLab
 
+在项目根目录执行：
+
 ```powershell
-cd E:\sysml\sysml-docgen-system
 .\scripts\start_jupyter.ps1
 ```
 
 打开：
 
 ```text
-http://127.0.0.1:8888/lab/tree/sysml_docgen_openmbee_demo.ipynb
+http://127.0.0.1:8888/lab/tree/notebooks/sysml_docgen_openmbee_demo.ipynb
 ```
 
 注意：JupyterLab 启动后会一直占用当前 PowerShell 窗口，这是正常现象，不是卡死。使用期间不要关闭这个窗口。
