@@ -290,7 +290,7 @@
               <el-option v-for="type in elementTypes" :key="type" :label="type" :value="type" />
             </el-select>
           </div>
-          <el-table :data="filteredElements" height="420" stripe highlight-current-row @row-click="focusElement">
+          <el-table :data="pagedElements" height="380" stripe highlight-current-row @row-click="focusElement">
             <el-table-column prop="name" label="名称" />
             <el-table-column prop="type" label="类型" width="140" />
             <el-table-column prop="documentation" label="说明" />
@@ -302,6 +302,14 @@
               </template>
             </el-table-column>
           </el-table>
+          <el-pagination
+            v-model:current-page="elementPage"
+            v-model:page-size="elementPageSize"
+            class="table-pagination"
+            layout="total, sizes, prev, pager, next"
+            :page-sizes="[20, 50, 100]"
+            :total="filteredElements.length"
+          />
         </el-card>
       </el-col>
       <el-col :span="10">
@@ -321,7 +329,7 @@
               <el-option v-for="type in relationTypes" :key="type" :label="type" :value="type" />
             </el-select>
           </div>
-          <el-table :data="visibleRelations" height="420" stripe @row-click="focusRelation">
+          <el-table :data="pagedRelations" height="380" stripe @row-click="focusRelation">
             <el-table-column label="源">
               <template #default="{ row }">{{ elementName(row.source_uid) }}</template>
             </el-table-column>
@@ -339,6 +347,14 @@
               </template>
             </el-table-column>
           </el-table>
+          <el-pagination
+            v-model:current-page="relationPage"
+            v-model:page-size="relationPageSize"
+            class="table-pagination"
+            layout="total, sizes, prev, pager, next"
+            :page-sizes="[20, 50, 100]"
+            :total="visibleRelations.length"
+          />
         </el-card>
       </el-col>
     </el-row>
@@ -367,49 +383,87 @@
               <span>图形化关系视图</span>
               <div class="graph-actions">
                 <span class="muted">展示 {{ graphNodes.length }} 个元素、{{ graphEdges.length }} 条关系</span>
-                <el-button size="small" :disabled="!selectedElement" @click="clearFocus">返回概览</el-button>
+                <el-tooltip content="适配视图" placement="top">
+                  <el-button class="graph-tool-button" circle :icon="Aim" @click="fitGraph" />
+                </el-tooltip>
+                <el-tooltip content="放大" placement="top">
+                  <el-button class="graph-tool-button" circle :icon="ZoomIn" @click="zoomGraph(1.15)" />
+                </el-tooltip>
+                <el-tooltip content="缩小" placement="top">
+                  <el-button class="graph-tool-button" circle :icon="ZoomOut" @click="zoomGraph(0.87)" />
+                </el-tooltip>
+                <el-tooltip content="返回概览" placement="top">
+                  <el-button class="graph-tool-button" circle :icon="RefreshLeft" :disabled="!selectedElement" @click="clearFocus" />
+                </el-tooltip>
               </div>
             </div>
           </template>
+          <div class="graph-toolbar">
+            <el-radio-group v-model="graphLayout" size="small" @change="resetGraphPositions">
+              <el-radio-button label="radial">环形</el-radio-button>
+              <el-radio-button label="hierarchy">分层</el-radio-button>
+              <el-radio-button label="force">力导向</el-radio-button>
+            </el-radio-group>
+            <el-select v-model="graphScope" size="small" class="graph-scope" @change="resetGraphPositions">
+              <el-option label="智能概览" value="important" />
+              <el-option label="筛选结果" value="filtered" />
+              <el-option label="当前邻域" value="neighborhood" />
+            </el-select>
+            <el-input-number v-model="graphNodeLimit" size="small" :min="8" :max="80" :step="4" controls-position="right" />
+            <el-input-number v-model="graphEdgeLimit" size="small" :min="20" :max="240" :step="20" controls-position="right" />
+          </div>
           <div class="graph-legend">
             <span><i class="legend-dot current-dot"></i>当前节点</span>
             <span><i class="legend-dot parent-dot"></i>当前节点的父节点</span>
             <span><i class="legend-dot child-dot"></i>当前节点的子节点</span>
           </div>
           <div class="graph-panel">
-            <svg viewBox="0 0 760 430" role="img" aria-label="模型关系图">
+            <svg
+              ref="graphSvgRef"
+              viewBox="0 0 760 430"
+              role="img"
+              aria-label="模型关系图"
+              @pointerdown="startGraphPan"
+              @pointermove="moveGraphPointer"
+              @pointerup="endGraphPointer"
+              @pointerleave="endGraphPointer"
+              @wheel.prevent="handleGraphWheel"
+            >
               <defs>
                 <marker id="arrow" markerWidth="12" markerHeight="12" refX="11" refY="4" orient="auto">
                   <path d="M0,0 L0,8 L11,4 z" fill="#6b7280" />
                 </marker>
               </defs>
-              <line
-                v-for="edge in graphEdges"
-                :key="edge.key"
-                :x1="edge.source.x"
-                :y1="edge.source.y"
-                :x2="edge.target.x"
-                :y2="edge.target.y"
-                class="graph-edge"
-                marker-end="url(#arrow)"
-              />
-              <g
-                v-for="node in graphNodes"
-                :key="node.uid"
-                :class="[
-                  'graph-node',
-                  {
-                    active: selectedElement?.element_uid === node.uid,
-                    selectedParent: selectedParentUid === node.uid,
-                    selectedChild: selectedChildUids.has(node.uid),
-                  },
-                ]"
-                @click="focusElement(node.element)"
-              >
-                <title>{{ nodeTooltip(node.element) }}</title>
-                <circle :cx="node.x" :cy="node.y" r="42" />
-                <text :x="node.x" :y="node.y - 6" text-anchor="middle">{{ compactName(node.element.name) }}</text>
-                <text :x="node.x" :y="node.y + 13" text-anchor="middle" class="node-type">{{ node.element.type }}</text>
+              <g :transform="graphTransform">
+                <line
+                  v-for="edge in graphEdges"
+                  :key="edge.key"
+                  :x1="edge.source.x"
+                  :y1="edge.source.y"
+                  :x2="edge.target.x"
+                  :y2="edge.target.y"
+                  class="graph-edge"
+                  marker-end="url(#arrow)"
+                />
+                <g
+                  v-for="node in graphNodes"
+                  :key="node.uid"
+                  :class="[
+                    'graph-node',
+                    {
+                      active: selectedElement?.element_uid === node.uid,
+                      selectedParent: selectedParentUid === node.uid,
+                      selectedChild: selectedChildUids.has(node.uid),
+                    },
+                  ]"
+                  @pointerdown.stop="startNodeDrag($event, node)"
+                  @pointerup.stop="endNodePointer($event, node.element)"
+                >
+                  <title>{{ nodeTooltip(node.element) }}</title>
+                  <circle :cx="node.x" :cy="node.y" r="42" />
+                  <text :x="node.x" :y="node.y - 6" text-anchor="middle">{{ compactName(node.element.name) }}</text>
+                  <text :x="node.x" :y="node.y + 13" text-anchor="middle" class="node-type">{{ node.element.type }}</text>
+                </g>
               </g>
             </svg>
             <el-empty v-if="!graphNodes.length" description="暂无可展示的模型元素" />
@@ -535,9 +589,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import type { TabsPaneContext, TreeInstance } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Aim, RefreshLeft, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { apiError } from '@/api/http'
 import {
   modelApi,
@@ -562,6 +617,13 @@ interface ElementTreeNode {
   label: string
   element: ModelElement
   children: ElementTreeNode[]
+}
+
+interface GraphNode {
+  uid: string
+  element: ModelElement
+  x: number
+  y: number
 }
 
 const projects = ref<Project[]>([])
@@ -619,7 +681,29 @@ const elementKeyword = ref('')
 const elementType = ref('')
 const relationKeyword = ref('')
 const relationType = ref('')
+const elementPage = ref(1)
+const elementPageSize = ref(50)
+const relationPage = ref(1)
+const relationPageSize = ref(50)
 const modelTreeRef = ref<TreeInstance>()
+const graphSvgRef = ref<SVGSVGElement>()
+const graphLayout = ref<'radial' | 'hierarchy' | 'force'>('radial')
+const graphScope = ref<'important' | 'filtered' | 'neighborhood'>('important')
+const graphNodeLimit = ref(24)
+const graphEdgeLimit = ref(80)
+const graphView = reactive({ scale: 1, x: 0, y: 0 })
+const graphDrag = reactive({
+  mode: '' as '' | 'pan' | 'node',
+  uid: '',
+  startX: 0,
+  startY: 0,
+  startViewX: 0,
+  startViewY: 0,
+  originX: 0,
+  originY: 0,
+  moved: false,
+})
+const manualGraphPositions = reactive<Record<string, { x: number; y: number }>>({})
 const versionProjectId = ref<number>()
 const branches = ref<VersionBranch[]>([])
 const tags = ref<VersionTag[]>([])
@@ -672,6 +756,7 @@ const filteredElements = computed(() => {
     return matchesType && (!keyword || text.includes(keyword))
   })
 })
+const pagedElements = computed(() => paginate(filteredElements.value, elementPage.value, elementPageSize.value))
 const visibleElementUids = computed(() => new Set(filteredElements.value.map((element) => element.element_uid)))
 const visibleRelations = computed(() => {
   const keyword = relationKeyword.value.trim().toLowerCase()
@@ -695,6 +780,7 @@ const visibleRelations = computed(() => {
     return matchesVisibleElement && matchesType && (!keyword || text.includes(keyword))
   })
 })
+const pagedRelations = computed(() => paginate(visibleRelations.value, relationPage.value, relationPageSize.value))
 const elementTree = computed(() => {
   const nodes = new Map<string, ElementTreeNode>()
   filteredElements.value.forEach((element) => {
@@ -729,13 +815,16 @@ const overviewGraphElements = computed(() => {
   const connected = [...candidates].sort(
     (a, b) => (relationDegreeByUid.value.get(b.element_uid) || 0) - (relationDegreeByUid.value.get(a.element_uid) || 0),
   )
-  add(roots, 8)
-  add(parents, 10)
-  add(connected, 14)
-  add(candidates, 24)
-  return Array.from(picked.values()).slice(0, 24)
+  const baseLimit = graphScope.value === 'filtered' ? graphNodeLimit.value : Math.max(8, Math.min(graphNodeLimit.value, 32))
+  add(roots, Math.ceil(baseLimit * 0.3))
+  add(parents, Math.ceil(baseLimit * 0.45))
+  add(connected, Math.ceil(baseLimit * 0.65))
+  add(candidates, baseLimit)
+  return Array.from(picked.values()).slice(0, baseLimit)
 })
 const graphSourceElements = computed(() => {
+  if (graphScope.value === 'filtered') return filteredElements.value.slice(0, graphNodeLimit.value)
+  if (graphScope.value !== 'neighborhood' && !selectedElement.value) return overviewGraphElements.value
   if (!selectedElement.value) return overviewGraphElements.value
   const relatedUids = new Set<string>([selectedElement.value.element_uid])
   if (selectedElement.value.parent_uid) relatedUids.add(selectedElement.value.parent_uid)
@@ -747,37 +836,33 @@ const graphSourceElements = computed(() => {
   return Array.from(relatedUids)
     .map((uid) => elementByUid.value.get(uid))
     .filter((element): element is ModelElement => Boolean(element))
-    .slice(0, 24)
+    .slice(0, graphNodeLimit.value)
 })
 const graphNodes = computed(() => {
-  const centerX = 380
-  const centerY = 215
-  const radius = selectedElement.value ? 145 : 150
   const visible = graphSourceElements.value
-  return visible.map((element, index) => {
-    if (selectedElement.value?.element_uid === element.element_uid) {
-      return { uid: element.element_uid, element, x: centerX, y: centerY }
-    }
-    const angle = (2 * Math.PI * index) / Math.max(visible.length, 1)
-    return {
-      uid: element.element_uid,
-      element,
-      x: Math.round(centerX + radius * Math.cos(angle)),
-      y: Math.round(centerY + radius * Math.sin(angle)),
-    }
+  const laidOut =
+    graphLayout.value === 'hierarchy'
+      ? hierarchyLayout(visible)
+      : graphLayout.value === 'force'
+        ? forceLayout(visible)
+        : radialLayout(visible)
+  return laidOut.map((node) => {
+    const manual = manualGraphPositions[node.uid]
+    return manual ? { ...node, x: manual.x, y: manual.y } : node
   })
 })
 const graphEdges = computed(() => {
   const nodeMap = new Map(graphNodes.value.map((node) => [node.uid, node]))
   return visibleRelations.value
     .filter((relation) => nodeMap.has(relation.source_uid) && nodeMap.has(relation.target_uid))
-    .slice(0, 80)
+    .slice(0, graphEdgeLimit.value)
     .map((relation) => ({
       key: relation.id,
       source: nodeMap.get(relation.source_uid)!,
       target: nodeMap.get(relation.target_uid)!,
     }))
 })
+const graphTransform = computed(() => `matrix(${graphView.scale} 0 0 ${graphView.scale} ${graphView.x} ${graphView.y})`)
 const selectedElementRelations = computed(() => {
   if (!selectedElement.value) return []
   return relations.value.filter(
@@ -807,6 +892,244 @@ const rollbackTargetTags = computed(() => {
 
 function onFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0] || null
+}
+
+function paginate<T>(items: T[], page: number, pageSize: number) {
+  const start = (page - 1) * pageSize
+  return items.slice(start, start + pageSize)
+}
+
+function radialLayout(visible: ModelElement[]): GraphNode[] {
+  const centerX = 380
+  const centerY = 215
+  const radius = selectedElement.value ? 145 : visible.length > 16 ? 165 : 150
+  return visible.map((element, index) => {
+    if (selectedElement.value?.element_uid === element.element_uid) {
+      return { uid: element.element_uid, element, x: centerX, y: centerY }
+    }
+    const angle = (2 * Math.PI * index) / Math.max(visible.length, 1)
+    return {
+      uid: element.element_uid,
+      element,
+      x: Math.round(centerX + radius * Math.cos(angle)),
+      y: Math.round(centerY + radius * Math.sin(angle)),
+    }
+  })
+}
+
+function hierarchyLayout(visible: ModelElement[]): GraphNode[] {
+  const visibleUids = new Set(visible.map((element) => element.element_uid))
+  const depthCache = new Map<string, number>()
+  const depthOf = (element: ModelElement): number => {
+    if (depthCache.has(element.element_uid)) return depthCache.get(element.element_uid)!
+    if (!element.parent_uid || !visibleUids.has(element.parent_uid)) {
+      depthCache.set(element.element_uid, 0)
+      return 0
+    }
+    const parent = elementByUid.value.get(element.parent_uid)
+    const depth = parent ? depthOf(parent) + 1 : 0
+    depthCache.set(element.element_uid, depth)
+    return depth
+  }
+  const groups = new Map<number, ModelElement[]>()
+  visible.forEach((element) => {
+    const depth = Math.min(depthOf(element), 5)
+    groups.set(depth, [...(groups.get(depth) || []), element])
+  })
+  const levels = [...groups.keys()].sort((a, b) => a - b)
+  const top = 74
+  const levelGap = levels.length > 1 ? Math.min(84, 300 / (levels.length - 1)) : 0
+  const nodes: GraphNode[] = []
+  levels.forEach((depth, levelIndex) => {
+    const items = groups.get(depth) || []
+    const rowY = top + levelIndex * levelGap
+    items.forEach((element, index) => {
+      const gap = 680 / Math.max(items.length, 1)
+      nodes.push({
+        uid: element.element_uid,
+        element,
+        x: Math.round(40 + gap / 2 + index * gap),
+        y: Math.round(rowY),
+      })
+    })
+  })
+  return nodes
+}
+
+function forceLayout(visible: ModelElement[]): GraphNode[] {
+  const nodes = radialLayout(visible).map((node) => ({ ...node }))
+  const indexByUid = new Map(nodes.map((node, index) => [node.uid, index]))
+  const activeRelations = visibleRelations.value.filter((relation) => indexByUid.has(relation.source_uid) && indexByUid.has(relation.target_uid))
+  for (let step = 0; step < 70; step += 1) {
+    for (let i = 0; i < nodes.length; i += 1) {
+      for (let j = i + 1; j < nodes.length; j += 1) {
+        const a = nodes[i]
+        const b = nodes[j]
+        const dx = a.x - b.x || 1
+        const dy = a.y - b.y || 1
+        const distanceSq = Math.max(dx * dx + dy * dy, 900)
+        const force = 2200 / distanceSq
+        const fx = dx * force
+        const fy = dy * force
+        a.x += fx
+        a.y += fy
+        b.x -= fx
+        b.y -= fy
+      }
+    }
+    activeRelations.forEach((relation) => {
+      const source = nodes[indexByUid.get(relation.source_uid)!]
+      const target = nodes[indexByUid.get(relation.target_uid)!]
+      const dx = target.x - source.x
+      const dy = target.y - source.y
+      source.x += dx * 0.012
+      source.y += dy * 0.012
+      target.x -= dx * 0.012
+      target.y -= dy * 0.012
+    })
+    nodes.forEach((node) => {
+      node.x += (380 - node.x) * 0.01
+      node.y += (215 - node.y) * 0.01
+      node.x = Math.min(710, Math.max(50, node.x))
+      node.y = Math.min(380, Math.max(50, node.y))
+    })
+  }
+  return nodes.map((node) => ({ ...node, x: Math.round(node.x), y: Math.round(node.y) }))
+}
+
+function graphPoint(event: PointerEvent | WheelEvent) {
+  const svg = graphSvgRef.value
+  if (!svg) return { x: 0, y: 0 }
+  const point = svg.createSVGPoint()
+  point.x = event.clientX
+  point.y = event.clientY
+  const matrix = svg.getScreenCTM()
+  if (!matrix) return { x: 0, y: 0 }
+  const transformed = point.matrixTransform(matrix.inverse())
+  return { x: transformed.x, y: transformed.y }
+}
+
+function toGraphContentPoint(event: PointerEvent) {
+  const point = graphPoint(event)
+  return {
+    x: (point.x - graphView.x) / graphView.scale,
+    y: (point.y - graphView.y) / graphView.scale,
+  }
+}
+
+function startGraphPan(event: PointerEvent) {
+  if (event.button !== 0) return
+  const point = graphPoint(event)
+  graphDrag.mode = 'pan'
+  graphDrag.startX = event.clientX
+  graphDrag.startY = event.clientY
+  graphDrag.startViewX = point.x
+  graphDrag.startViewY = point.y
+  graphDrag.originX = graphView.x
+  graphDrag.originY = graphView.y
+  graphDrag.moved = false
+  graphSvgRef.value?.setPointerCapture(event.pointerId)
+}
+
+function startNodeDrag(event: PointerEvent, node: GraphNode) {
+  if (event.button !== 0) return
+  const point = toGraphContentPoint(event)
+  graphDrag.mode = 'node'
+  graphDrag.uid = node.uid
+  graphDrag.startX = point.x
+  graphDrag.startY = point.y
+  graphDrag.startViewX = 0
+  graphDrag.startViewY = 0
+  graphDrag.originX = node.x
+  graphDrag.originY = node.y
+  graphDrag.moved = false
+  ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
+}
+
+function moveGraphPointer(event: PointerEvent) {
+  if (graphDrag.mode === 'pan') {
+    const point = graphPoint(event)
+    const dx = point.x - graphDrag.startViewX
+    const dy = point.y - graphDrag.startViewY
+    if (Math.abs(dx) + Math.abs(dy) > 3) graphDrag.moved = true
+    graphView.x = graphDrag.originX + dx
+    graphView.y = graphDrag.originY + dy
+  }
+  if (graphDrag.mode === 'node' && graphDrag.uid) {
+    const point = toGraphContentPoint(event)
+    if (Math.abs(point.x - graphDrag.startX) + Math.abs(point.y - graphDrag.startY) > 3) graphDrag.moved = true
+    manualGraphPositions[graphDrag.uid] = {
+      x: Math.round(graphDrag.originX + point.x - graphDrag.startX),
+      y: Math.round(graphDrag.originY + point.y - graphDrag.startY),
+    }
+  }
+}
+
+function endGraphPointer(event: PointerEvent) {
+  try {
+    graphSvgRef.value?.releasePointerCapture?.(event.pointerId)
+  } catch {
+    // Pointer capture may already be released by the browser.
+  }
+  graphDrag.mode = ''
+  graphDrag.uid = ''
+}
+
+function endNodePointer(event: PointerEvent, row: ModelElement) {
+  try {
+    ;(event.currentTarget as Element).releasePointerCapture?.(event.pointerId)
+  } catch {
+    // Pointer capture may already be released by the browser.
+  }
+  if (graphDrag.moved) {
+    graphDrag.mode = ''
+    graphDrag.uid = ''
+    graphDrag.moved = false
+    return
+  }
+  graphDrag.mode = ''
+  graphDrag.uid = ''
+  focusElement(row)
+}
+
+function handleGraphWheel(event: WheelEvent) {
+  zoomGraph(event.deltaY > 0 ? 0.9 : 1.1, graphPoint(event))
+}
+
+function zoomGraph(factor: number, origin = { x: 380, y: 215 }) {
+  const nextScale = Math.min(2.6, Math.max(0.45, graphView.scale * factor))
+  const contentX = (origin.x - graphView.x) / graphView.scale
+  const contentY = (origin.y - graphView.y) / graphView.scale
+  graphView.x = origin.x - contentX * nextScale
+  graphView.y = origin.y - contentY * nextScale
+  graphView.scale = nextScale
+}
+
+function fitGraph() {
+  if (!graphNodes.value.length) {
+    resetGraphView()
+    return
+  }
+  const padding = 70
+  const minX = Math.min(...graphNodes.value.map((node) => node.x)) - padding
+  const maxX = Math.max(...graphNodes.value.map((node) => node.x)) + padding
+  const minY = Math.min(...graphNodes.value.map((node) => node.y)) - padding
+  const maxY = Math.max(...graphNodes.value.map((node) => node.y)) + padding
+  const scale = Math.min(760 / Math.max(maxX - minX, 1), 430 / Math.max(maxY - minY, 1), 1.8)
+  graphView.scale = Math.max(0.45, scale)
+  graphView.x = 760 / 2 - ((minX + maxX) / 2) * graphView.scale
+  graphView.y = 430 / 2 - ((minY + maxY) / 2) * graphView.scale
+}
+
+function resetGraphView() {
+  graphView.scale = 1
+  graphView.x = 0
+  graphView.y = 0
+}
+
+function resetGraphPositions() {
+  Object.keys(manualGraphPositions).forEach((key) => delete manualGraphPositions[key])
+  resetGraphView()
 }
 
 function handleImportTabChange(name: string | number | TabsPaneContext) {
@@ -1223,11 +1546,17 @@ function resetModelForm() {
 
 function focusElement(row: ModelElement) {
   selectedElement.value = row
+  if (elements.value.length > graphNodeLimit.value && graphScope.value === 'important') {
+    graphScope.value = 'neighborhood'
+  }
   syncTreeSelection(row.element_uid)
 }
 
 function focusTreeNode(node: ElementTreeNode) {
   selectedElement.value = node.element
+  if (elements.value.length > graphNodeLimit.value && graphScope.value === 'important') {
+    graphScope.value = 'neighborhood'
+  }
   syncTreeSelection(node.uid)
 }
 
@@ -1451,6 +1780,9 @@ function modelVersionLabel(model: SysMLModel) {
 function clearFocus() {
   selectedElement.value = null
   modelTreeRef.value?.setCurrentKey()
+  if (graphScope.value === 'neighborhood') {
+    graphScope.value = 'important'
+  }
 }
 
 function nodeTooltip(element: ModelElement) {
@@ -1506,6 +1838,24 @@ async function syncTreeSelection(uid: string) {
   await nextTick()
   document.querySelector('.model-tree .is-current')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 }
+
+watch([elementKeyword, elementType], () => {
+  elementPage.value = 1
+  resetGraphPositions()
+})
+
+watch([relationKeyword, relationType], () => {
+  relationPage.value = 1
+})
+
+watch([elementPageSize, relationPageSize], () => {
+  elementPage.value = 1
+  relationPage.value = 1
+})
+
+watch([selected, selectedElement, graphNodeLimit, graphEdgeLimit], () => {
+  resetGraphPositions()
+})
 
 onMounted(load)
 </script>
@@ -1703,6 +2053,11 @@ onMounted(load)
   width: 160px;
 }
 
+.table-pagination {
+  margin-top: 12px;
+  justify-content: flex-end;
+}
+
 .viewer-row {
   margin-top: 18px;
   align-items: stretch;
@@ -1750,7 +2105,7 @@ onMounted(load)
 
 .graph-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   justify-content: flex-end;
   flex-wrap: wrap;
@@ -1760,6 +2115,39 @@ onMounted(load)
 .graph-actions .muted {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.graph-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.graph-tool-button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-color: var(--line-strong);
+  background: #ffffff;
+  color: var(--brand-dark);
+  box-shadow: var(--shadow-sm);
+}
+
+.graph-tool-button:hover,
+.graph-tool-button:focus {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+}
+
+.graph-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.graph-scope {
+  width: 118px;
 }
 
 .legend-dot {
@@ -1797,6 +2185,13 @@ onMounted(load)
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fbfcfb;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.graph-panel svg:active {
+  cursor: grabbing;
 }
 
 .graph-edge {
