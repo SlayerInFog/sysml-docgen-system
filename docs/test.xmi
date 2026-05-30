@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<uml:Model xmi:version="20131001" xmlns:xmi="http://www.omg.org/spec/XMI/20131001" 
+           xmlns:uml="http://www.omg.org/spec/UML/20131001" 
+           xmi:id="_model_001" name="DroneDeliverySystem">
+    
+    <!-- 包结构：定义整个无人机配送系统 -->
+    <packagedElement xmi:type="uml:Package" xmi:id="_pkg_system" name="DroneDeliverySystem">
+        <ownedComment xmi:type="uml:Comment" xmi:id="_comment_overview" 
+                      documentation="无人机配送系统：用于自动化包裹配送的完整解决方案"/>
+        
+        <!-- 需求部分：系统需求定义 -->
+        <packagedElement xmi:type="uml:Package" xmi:id="_pkg_requirements" name="Requirements">
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_req_flight_range" name="飞行距离需求">
+                <ownedComment xmi:type="uml:Comment" xmi:id="_comment_range"
+                              documentation="无人机单次飞行距离必须大于等于15公里"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_range_value" 
+                                name="minRange" type="_Integer" defaultValue="15"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_req_payload" name="载重能力需求">
+                <ownedComment xmi:type="uml:Comment" xmi:id="_comment_payload"
+                              documentation="无人机最大载重必须达到5公斤"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_payload_value" 
+                                name="maxPayload" type="_Integer" defaultValue="5"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_req_battery" name="电池续航需求">
+                <ownedComment xmi:type="uml:Comment" xmi:id="_comment_battery"
+                              documentation="无人机电池续航时间必须超过45分钟"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_battery_value" 
+                                name="minBatteryLife" type="_Integer" defaultValue="45"/>
+            </packagedElement>
+        </packagedElement>
+        
+        <!-- 块定义部分：系统结构 -->
+        <packagedElement xmi:type="uml:Package" xmi:id="_pkg_blocks" name="Blocks">
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_block_drone" name="无人机">
+                <ownedComment xmi:type="uml:Comment" xmi:id="_comment_drone"
+                              documentation="无人机本体，包含所有飞控系统和硬件组件"/>
+                
+                <!-- 无人机的属性 -->
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_drone_id" 
+                                name="droneId" type="_String"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_drone_status" 
+                                name="status" type="_String" defaultValue="idle"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_current_battery" 
+                                name="currentBatteryLevel" type="_Integer" defaultValue="100"/>
+                
+                <!-- 无人机的组成部分 -->
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_flight_controller" 
+                                name="flightController" type="_block_flight_controller"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_battery_module" 
+                                name="batteryModule" type="_block_battery"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_gps_module" 
+                                name="gpsModule" type="_block_gps"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_camera" 
+                                name="camera" type="_block_camera"/>
+                <ownedAttribute xmi:type="uml:Property" xmi:id="_prop_motors" 
+                                name="motors" type="_block_motor" multiplicity="4"/>
+                
+                <!-- 无人机的操作 -->
+                <ownedOperation xmi:type="uml:Operation" xmi:id="_op_takeoff" name="takeOff()">
+                    <ownedComment documentation="无人机起飞操作，消耗电池电量"/>
+                </ownedOperation>
+                <ownedOperation xmi:type="uml:Operation" xmi:id="_op_land" name="land()">
+                    <ownedComment documentation="无人机降落操作"/>
+                </ownedOperation>
+                <ownedOperation xmi:type="uml:Operation" xmi:id="_op_fly_to" name="flyTo(destination: String)">
+                    <ownedParameter xmi:type="uml:Parameter" name="destination" type="_String"/>
+                    <ownedComment documentation="无人机飞往指定目的地"/>
+                </ownedOperation>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_block_flight_controller" name="飞控系统">
+                <ownedComment documentation="飞行控制系统，负责导航和姿态控制"/>
+                <ownedOperation xmi:type="uml:Operation" name="calculateRoute()"/>
+                <ownedOperation xmi:type="uml:Operation" name="stabilize()"/>
+                <ownedOperation xmi:type="uml:Operation" name="emergencyLand()"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_block_battery" name="电池模块">
+                <ownedComment documentation="锂电池供电系统"/>
+                <ownedAttribute xmi:type="uml:Property" name="capacity" type="_Integer" defaultValue="5000"/>
+                <ownedAttribute xmi:type="uml:Property" name="voltage" type="_Integer" defaultValue="22.2"/>
+                <ownedOperation xmi:type="uml:Operation" name="getRemainingCharge()"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_block_gps" name="GPS模块">
+                <ownedComment documentation="全球定位系统模块"/>
+                <ownedAttribute xmi:type="uml:Property" name="satellitesConnected" type="_Integer"/>
+                <ownedOperation xmi:type="uml:Operation" name="getCurrentPosition()"/>
+                <ownedOperation xmi:type="uml:Operation" name="checkSignalStrength()"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_block_camera" name="摄像头">
+                <ownedComment documentation="航拍和视觉识别摄像头"/>
+                <ownedAttribute xmi:type="uml:Property" name="resolution" type="_String" defaultValue="4K"/>
+                <ownedOperation xmi:type="uml:Operation" name="captureImage()"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:Class" xmi:id="_block_motor" name="电机">
+                <ownedComment documentation="无刷直流电机"/>
+                <ownedAttribute xmi:type="uml:Property" name="speed" type="_Integer"/>
+                <ownedAttribute xmi:type="uml:Property" name="thrust" type="_Integer"/>
+                <ownedOperation xmi:type="uml:Operation" name="setSpeed()"/>
+            </packagedElement>
+        </packagedElement>
+        
+        <!-- 用例部分：系统功能 -->
+        <packagedElement xmi:type="uml:Package" xmi:id="_pkg_usecases" name="UseCases">
+            
+            <packagedElement xmi:type="uml:UseCase" xmi:id="_uc_delivery" name="配送包裹">
+                <ownedComment documentation="用户下单后，无人机自动配送包裹到指定地点"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:UseCase" xmi:id="_uc_monitor" name="监控状态">
+                <ownedComment documentation="地面站监控无人机实时状态"/>
+            </packagedElement>
+            
+            <packagedElement xmi:type="uml:UseCase" xmi:id="_uc_emergency" name="紧急处理">
+                <ownedComment documentation="电池低电量或故障时的应急处理"/>
+            </packagedElement>
+        </packagedElement>
+        
+        <!-- 活动部分：业务流程 -->
+        <packagedElement xmi:type="uml:Package" xmi:id="_pkg_activities" name="Activities">
+            
+            <packagedElement xmi:type="uml:Activity" xmi:id="_act_delivery_flow" name="配送流程">
+                <ownedComment documentation="完整的包裹配送活动流程"/>
+                <ownedNode xmi:type="uml:InitialNode" xmi:id="_init_delivery"/>
+                <ownedNode xmi:type="uml:ActivityFinalNode" xmi:id="_final_delivery"/>
+                
+                <ownedNode xmi:type="uml:OpaqueAction" xmi:id="_action_receive_order" name="接收订单">
+                    <documentation>接收用户订单信息</documentation>
+                </ownedNode>
+                
+                <ownedNode xmi:type="uml:OpaqueAction" xmi:id="_action_check_battery" name="检查电量">
+                    <documentation>检查电池是否充足</documentation>
+                </ownedNode>
+                
+                <ownedNode xmi:type="uml:DecisionNode" xmi:id="_decision_battery" name="电池判断">
+                    <documentation>电量是否足够？</documentation>
+                </ownedNode>
+            </packagedElement>
+        </packagedElement>
+    </packagedElement>
+    
+    <!-- 原始类型定义 -->
+    <packagedElement xmi:type="uml:PrimitiveType" xmi:id="_String" name="String"/>
+    <packagedElement xmi:type="uml:PrimitiveType" xmi:id="_Integer" name="Integer"/>
+    <packagedElement xmi:type="uml:PrimitiveType" xmi:id="_Boolean" name="Boolean"/>
+</uml:Model>
