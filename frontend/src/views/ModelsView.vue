@@ -156,11 +156,6 @@
                 <pre>{{ jupyterUrl }}</pre>
               </div>
             </div>
-            <el-alert
-              type="info"
-              :closable="false"
-              title="Jupyter 需要单独启动；启动窗口不要关闭。它是验证工具，不替代 MDK/Cameo。"
-            />
           </div>
         </el-tab-pane>
       </el-tabs>
