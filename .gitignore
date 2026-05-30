@@ -15,6 +15,7 @@ logs/
 backend/app/uploads/
 backend/app/generated/
 notebooks/.ipynb_checkpoints/
+.jupyter-work/
 
 # Browser profiles
 .chrome-profile/
