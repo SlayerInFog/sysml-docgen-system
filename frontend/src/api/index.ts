@@ -258,6 +258,11 @@ export const modelApi = {
       .then((r) => r.data),
   updateElement: (id: number, data: { name?: string; documentation?: string }) =>
     http.patch<ModelElement>(`/models/elements/${id}`, data).then((r) => r.data),
+  createRelation: (modelId: number, data: { source_uid: string; target_uid: string; relation_type: string; label?: string }) =>
+    http.post<ModelRelation>(`/models/${modelId}/relations`, data).then((r) => r.data),
+  updateRelation: (id: number, data: { source_uid?: string; target_uid?: string; relation_type?: string; label?: string }) =>
+    http.patch<ModelRelation>(`/models/relations/${id}`, data).then((r) => r.data),
+  removeRelation: (id: number) => http.delete<SysMLModel>(`/models/relations/${id}`).then((r) => r.data),
 }
 
 export const versioningApi = {

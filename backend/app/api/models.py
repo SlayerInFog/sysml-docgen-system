@@ -21,7 +21,9 @@ from app.schemas.sysml import (
     ModelElementOut,
     ModelElementUpdate,
     ModelGraphOut,
+    ModelRelationCreate,
     ModelRelationOut,
+    ModelRelationUpdate,
     RelationCompareItem,
     SysMLModelOut,
     SysMLModelUpdate,
@@ -303,6 +305,128 @@ def update_element(
     return new_element
 
 
+@router.post("/{model_id}/relations", response_model=ModelRelationOut, status_code=201)
+def create_relation(
+    model_id: int,
+    payload: ModelRelationCreate,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> ModelRelation:
+    model = ensure_model_access(db, model_id, user)
+    _ensure_model_edit_access(db, model, user)
+    source_uid = _normalize_relation_uid(payload.source_uid, "源元素不能为空")
+    target_uid = _normalize_relation_uid(payload.target_uid, "目标元素不能为空")
+    relation_type = _normalize_relation_type(payload.relation_type)
+    _ensure_relation_endpoint_exists(db, model.id, source_uid, "源元素不存在")
+    _ensure_relation_endpoint_exists(db, model.id, target_uid, "目标元素不存在")
+
+    new_model = _clone_model_for_update(db, model, user, status="edited")
+    new_relation = ModelRelation(
+        model_id=new_model.id,
+        source_uid=source_uid,
+        target_uid=target_uid,
+        relation_type=relation_type,
+        label=_normalize_relation_label(payload.label),
+    )
+    db.add(new_relation)
+    sync_model_branch_head(db, new_model, user)
+
+    db.commit()
+    db.refresh(new_relation)
+    write_log(db, user, "create_relation", "relation", new_relation.id, f"from_model:{model.id}")
+    return new_relation
+
+
+@router.patch("/relations/{relation_id}", response_model=ModelRelationOut)
+def update_relation(
+    relation_id: int,
+    payload: ModelRelationUpdate,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> ModelRelation:
+    relation = db.query(ModelRelation).filter(ModelRelation.id == relation_id).first()
+    if not relation:
+        raise HTTPException(status_code=404, detail="模型关系不存在")
+
+    model = ensure_model_access(db, relation.model_id, user)
+    _ensure_model_edit_access(db, model, user)
+    next_source_uid = _normalize_relation_uid(payload.source_uid, "源元素不能为空") if payload.source_uid is not None else relation.source_uid
+    next_target_uid = _normalize_relation_uid(payload.target_uid, "目标元素不能为空") if payload.target_uid is not None else relation.target_uid
+    next_relation_type = _normalize_relation_type(payload.relation_type) if payload.relation_type is not None else relation.relation_type
+    next_label = _normalize_relation_label(payload.label) if "label" in payload.model_fields_set else relation.label
+
+    if (
+        next_source_uid == relation.source_uid
+        and next_target_uid == relation.target_uid
+        and next_relation_type == relation.relation_type
+        and next_label == relation.label
+    ):
+        return relation
+
+    _ensure_relation_endpoint_exists(db, model.id, next_source_uid, "源元素不存在")
+    _ensure_relation_endpoint_exists(db, model.id, next_target_uid, "目标元素不存在")
+
+    new_model = _clone_model_for_update(db, model, user, status="edited")
+    new_relation = (
+        db.query(ModelRelation)
+        .filter(
+            ModelRelation.model_id == new_model.id,
+            ModelRelation.source_uid == relation.source_uid,
+            ModelRelation.target_uid == relation.target_uid,
+            ModelRelation.relation_type == relation.relation_type,
+            ModelRelation.label == relation.label,
+        )
+        .first()
+    )
+    if not new_relation:
+        raise HTTPException(status_code=500, detail="创建关系编辑版本失败")
+
+    new_relation.source_uid = next_source_uid
+    new_relation.target_uid = next_target_uid
+    new_relation.relation_type = next_relation_type
+    new_relation.label = next_label
+    sync_model_branch_head(db, new_model, user)
+
+    db.commit()
+    db.refresh(new_relation)
+    write_log(db, user, "update_relation", "relation", new_relation.id, f"from:{relation.id}")
+    return new_relation
+
+
+@router.delete("/relations/{relation_id}", response_model=SysMLModelOut)
+def delete_relation(
+    relation_id: int,
+    user: User = Depends(require_roles("admin", "author")),
+    db: Session = Depends(get_db),
+) -> SysMLModel:
+    relation = db.query(ModelRelation).filter(ModelRelation.id == relation_id).first()
+    if not relation:
+        raise HTTPException(status_code=404, detail="模型关系不存在")
+
+    model = ensure_model_access(db, relation.model_id, user)
+    _ensure_model_edit_access(db, model, user)
+    new_model = _clone_model_for_update(db, model, user, status="edited")
+    new_relation = (
+        db.query(ModelRelation)
+        .filter(
+            ModelRelation.model_id == new_model.id,
+            ModelRelation.source_uid == relation.source_uid,
+            ModelRelation.target_uid == relation.target_uid,
+            ModelRelation.relation_type == relation.relation_type,
+            ModelRelation.label == relation.label,
+        )
+        .first()
+    )
+    if new_relation:
+        db.delete(new_relation)
+    sync_model_branch_head(db, new_model, user)
+
+    db.commit()
+    db.refresh(new_model)
+    write_log(db, user, "delete_relation", "relation", relation_id, f"new_model:{new_model.id}")
+    return new_model
+
+
 def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     model = db.query(SysMLModel).join(Project).filter(SysMLModel.id == model_id).first()
     if not model:
@@ -310,6 +434,36 @@ def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     if not has_project_role(db, model.project_id, user):
         raise HTTPException(status_code=403, detail="权限不足")
     return model
+
+
+def _ensure_model_edit_access(db: Session, model: SysMLModel, user: User) -> None:
+    if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
+        raise HTTPException(status_code=403, detail="权限不足")
+
+
+def _ensure_relation_endpoint_exists(db: Session, model_id: int, element_uid: str, detail: str) -> None:
+    exists = db.query(ModelElement.id).filter(ModelElement.model_id == model_id, ModelElement.element_uid == element_uid).first()
+    if not exists:
+        raise HTTPException(status_code=400, detail=detail)
+
+
+def _normalize_relation_uid(value: str, empty_detail: str) -> str:
+    uid = value.strip()
+    if not uid:
+        raise HTTPException(status_code=400, detail=empty_detail)
+    return uid[:255]
+
+
+def _normalize_relation_type(value: str) -> str:
+    relation_type = value.strip()
+    if not relation_type:
+        raise HTTPException(status_code=400, detail="关系类型不能为空")
+    return relation_type[:80]
+
+
+def _normalize_relation_label(value: str | None) -> str | None:
+    label = (value or "").strip()
+    return label or None
 
 
 def _element_compare_item(element: ModelElement, change_fields: list[str] | None = None) -> ModelCompareItem:

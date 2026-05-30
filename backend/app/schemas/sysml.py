@@ -29,6 +29,20 @@ class ModelElementUpdate(BaseModel):
     documentation: str | None = None
 
 
+class ModelRelationCreate(BaseModel):
+    source_uid: str
+    target_uid: str
+    relation_type: str
+    label: str | None = None
+
+
+class ModelRelationUpdate(BaseModel):
+    source_uid: str | None = None
+    target_uid: str | None = None
+    relation_type: str | None = None
+    label: str | None = None
+
+
 class ModelElementOut(BaseModel):
     model_config = ConfigDict(from_attributes=True, protected_namespaces=())
 

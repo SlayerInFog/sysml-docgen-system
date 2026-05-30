@@ -306,11 +306,38 @@
       </el-col>
       <el-col :span="10">
         <el-card>
-          <template #header>元素关系</template>
-          <el-table :data="visibleRelations" height="480" stripe @row-click="focusRelation">
-            <el-table-column prop="source_uid" label="源" />
+          <template #header>
+            <div class="card-header">
+              <span>元素关系</span>
+              <div class="table-actions">
+                <span class="muted">{{ visibleRelations.length }} / {{ relations.length }}</span>
+                <el-button size="small" type="primary" @click="createRelation">新增关系</el-button>
+              </div>
+            </div>
+          </template>
+          <div class="filter-bar relation-filter">
+            <el-input v-model="relationKeyword" clearable placeholder="按元素、关系类型或标签过滤" />
+            <el-select v-model="relationType" clearable placeholder="全部关系">
+              <el-option v-for="type in relationTypes" :key="type" :label="type" :value="type" />
+            </el-select>
+          </div>
+          <el-table :data="visibleRelations" height="420" stripe @row-click="focusRelation">
+            <el-table-column label="源">
+              <template #default="{ row }">{{ elementName(row.source_uid) }}</template>
+            </el-table-column>
             <el-table-column prop="relation_type" label="关系" width="120" />
-            <el-table-column prop="target_uid" label="目标" />
+            <el-table-column label="目标">
+              <template #default="{ row }">{{ elementName(row.target_uid) }}</template>
+            </el-table-column>
+            <el-table-column prop="label" label="标签" width="100" />
+            <el-table-column label="操作" width="120" class-name="table-actions-cell">
+              <template #default="{ row }">
+                <div class="table-actions">
+                  <el-button text type="primary" @click.stop="editRelation(row)">编辑</el-button>
+                  <el-button text type="danger" @click.stop="removeRelation(row)">删除</el-button>
+                </div>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -352,8 +379,8 @@
           <div class="graph-panel">
             <svg viewBox="0 0 760 430" role="img" aria-label="模型关系图">
               <defs>
-                <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
-                  <path d="M0,0 L0,6 L9,3 z" fill="#6b7280" />
+                <marker id="arrow" markerWidth="12" markerHeight="12" refX="11" refY="4" orient="auto">
+                  <path d="M0,0 L0,8 L11,4 z" fill="#6b7280" />
                 </marker>
               </defs>
               <line
@@ -380,8 +407,8 @@
                 @click="focusElement(node.element)"
               >
                 <title>{{ nodeTooltip(node.element) }}</title>
-                <circle :cx="node.x" :cy="node.y" r="30" />
-                <text :x="node.x" :y="node.y - 3" text-anchor="middle">{{ compactName(node.element.name) }}</text>
+                <circle :cx="node.x" :cy="node.y" r="42" />
+                <text :x="node.x" :y="node.y - 6" text-anchor="middle">{{ compactName(node.element.name) }}</text>
                 <text :x="node.x" :y="node.y + 13" text-anchor="middle" class="node-type">{{ node.element.type }}</text>
               </g>
             </svg>
@@ -483,6 +510,27 @@
         <el-button type="primary" @click="saveElement">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="relationDialog" :title="editingRelationId ? '编辑模型关系' : '新增模型关系'" width="620px" @closed="resetRelationForm">
+      <el-form label-position="top">
+        <el-form-item label="源元素">
+          <el-select v-model="relationForm.source_uid" filterable placeholder="选择源元素" class="wide">
+            <el-option v-for="element in elements" :key="element.element_uid" :label="elementOptionLabel(element)" :value="element.element_uid" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="目标元素">
+          <el-select v-model="relationForm.target_uid" filterable placeholder="选择目标元素" class="wide">
+            <el-option v-for="element in elements" :key="element.element_uid" :label="elementOptionLabel(element)" :value="element.element_uid" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关系类型"><el-input v-model="relationForm.relation_type" placeholder="例如 dependency / composition" /></el-form-item>
+        <el-form-item label="标签"><el-input v-model="relationForm.label" placeholder="可选" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="relationDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveRelation">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -562,10 +610,15 @@ const editingModelId = ref<number>()
 const modelForm = reactive({ name: '', description: '' })
 const editDialog = ref(false)
 const editing = ref<ModelElement | null>(null)
+const relationDialog = ref(false)
+const editingRelationId = ref<number>()
+const relationForm = reactive({ source_uid: '', target_uid: '', relation_type: '', label: '' })
 const targetModelId = ref<number>()
 const compareResult = ref<ModelCompare | null>(null)
 const elementKeyword = ref('')
 const elementType = ref('')
+const relationKeyword = ref('')
+const relationType = ref('')
 const modelTreeRef = ref<TreeInstance>()
 const versionProjectId = ref<number>()
 const branches = ref<VersionBranch[]>([])
@@ -583,6 +636,7 @@ const rollbackForm = reactive({
 
 const elementByUid = computed(() => new Map(elements.value.map((element) => [element.element_uid, element])))
 const elementTypes = computed(() => [...new Set(elements.value.map((item) => item.type).filter(Boolean))].sort())
+const relationTypes = computed(() => [...new Set(relations.value.map((item) => item.relation_type).filter(Boolean))].sort())
 const selectedParentUid = computed(() => selectedElement.value?.parent_uid || '')
 const selectedChildUids = computed(
   () =>
@@ -619,11 +673,28 @@ const filteredElements = computed(() => {
   })
 })
 const visibleElementUids = computed(() => new Set(filteredElements.value.map((element) => element.element_uid)))
-const visibleRelations = computed(() =>
-  relations.value.filter(
-    (relation) => visibleElementUids.value.has(relation.source_uid) || visibleElementUids.value.has(relation.target_uid),
-  ),
-)
+const visibleRelations = computed(() => {
+  const keyword = relationKeyword.value.trim().toLowerCase()
+  return relations.value.filter((relation) => {
+    const source = elementByUid.value.get(relation.source_uid)
+    const target = elementByUid.value.get(relation.target_uid)
+    const matchesVisibleElement = visibleElementUids.value.has(relation.source_uid) || visibleElementUids.value.has(relation.target_uid)
+    const matchesType = !relationType.value || relation.relation_type === relationType.value
+    const text = [
+      relation.source_uid,
+      relation.target_uid,
+      relation.relation_type,
+      relation.label || '',
+      source?.name || '',
+      target?.name || '',
+      source?.type || '',
+      target?.type || '',
+    ]
+      .join(' ')
+      .toLowerCase()
+    return matchesVisibleElement && matchesType && (!keyword || text.includes(keyword))
+  })
+})
 const elementTree = computed(() => {
   const nodes = new Map<string, ElementTreeNode>()
   filteredElements.value.forEach((element) => {
@@ -658,11 +729,11 @@ const overviewGraphElements = computed(() => {
   const connected = [...candidates].sort(
     (a, b) => (relationDegreeByUid.value.get(b.element_uid) || 0) - (relationDegreeByUid.value.get(a.element_uid) || 0),
   )
-  add(roots, 10)
-  add(parents, 14)
-  add(connected, 18)
-  add(candidates, 36)
-  return Array.from(picked.values()).slice(0, 36)
+  add(roots, 8)
+  add(parents, 10)
+  add(connected, 14)
+  add(candidates, 24)
+  return Array.from(picked.values()).slice(0, 24)
 })
 const graphSourceElements = computed(() => {
   if (!selectedElement.value) return overviewGraphElements.value
@@ -676,7 +747,7 @@ const graphSourceElements = computed(() => {
   return Array.from(relatedUids)
     .map((uid) => elementByUid.value.get(uid))
     .filter((element): element is ModelElement => Boolean(element))
-    .slice(0, 36)
+    .slice(0, 24)
 })
 const graphNodes = computed(() => {
   const centerX = 380
@@ -698,7 +769,7 @@ const graphNodes = computed(() => {
 })
 const graphEdges = computed(() => {
   const nodeMap = new Map(graphNodes.value.map((node) => [node.uid, node]))
-  return relations.value
+  return visibleRelations.value
     .filter((relation) => nodeMap.has(relation.source_uid) && nodeMap.has(relation.target_uid))
     .slice(0, 80)
     .map((relation) => ({
@@ -1165,6 +1236,84 @@ function focusRelation(row: ModelRelation) {
   if (element) focusElement(element)
 }
 
+function createRelation() {
+  if (!selected.value) return
+  resetRelationForm()
+  if (selectedElement.value) {
+    relationForm.source_uid = selectedElement.value.element_uid
+  }
+  relationDialog.value = true
+}
+
+function editRelation(row: ModelRelation) {
+  editingRelationId.value = row.id
+  Object.assign(relationForm, {
+    source_uid: row.source_uid,
+    target_uid: row.target_uid,
+    relation_type: row.relation_type,
+    label: row.label || '',
+  })
+  relationDialog.value = true
+}
+
+async function saveRelation() {
+  if (!selected.value) return
+  if (!relationForm.source_uid || !relationForm.target_uid || !relationForm.relation_type.trim()) {
+    ElMessage.warning('请选择源元素、目标元素并填写关系类型')
+    return
+  }
+  try {
+    const payload = {
+      source_uid: relationForm.source_uid,
+      target_uid: relationForm.target_uid,
+      relation_type: relationForm.relation_type.trim(),
+      label: relationForm.label.trim(),
+    }
+    const changed = editingRelationId.value
+      ? await modelApi.updateRelation(editingRelationId.value, payload)
+      : await modelApi.createRelation(selected.value.id, payload)
+    await refreshAfterRelationEdit(changed.model_id, changed.source_uid)
+    relationDialog.value = false
+    ElMessage.success(editingRelationId.value ? '关系已更新' : '关系已新增')
+  } catch (error) {
+    ElMessage.error(apiError(error, editingRelationId.value ? '修改关系失败' : '新增关系失败'))
+  }
+}
+
+async function removeRelation(row: ModelRelation) {
+  try {
+    await ElMessageBox.confirm(`删除关系“${elementName(row.source_uid)} -> ${elementName(row.target_uid)}”？会生成新的模型版本。`, '确认删除', {
+      type: 'warning',
+    })
+    const newModel = await modelApi.removeRelation(row.id)
+    await refreshAfterRelationEdit(newModel.id, row.source_uid)
+    ElMessage.success('关系已删除')
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error(apiError(error, '删除关系失败'))
+    }
+  }
+}
+
+async function refreshAfterRelationEdit(modelId: number, focusUid?: string) {
+  models.value = await modelApi.list()
+  const nextModel = models.value.find((item) => item.id === modelId)
+  if (nextModel) {
+    await selectModel(nextModel)
+    const nextElement = focusUid ? elements.value.find((item) => item.element_uid === focusUid) : undefined
+    if (nextElement) {
+      selectedElement.value = nextElement
+      await syncTreeSelection(nextElement.element_uid)
+    }
+  }
+  await loadModelVersioning()
+}
+
+function resetRelationForm() {
+  editingRelationId.value = undefined
+  Object.assign(relationForm, { source_uid: '', target_uid: '', relation_type: '', label: '' })
+}
+
 function editElement(row: ModelElement) {
   selectedElement.value = row
   syncTreeSelection(row.element_uid)
@@ -1270,6 +1419,15 @@ function relationPeerName(relation: ModelRelation) {
   const peerUid =
     relation.source_uid === selectedElement.value.element_uid ? relation.target_uid : relation.source_uid
   return elementByUid.value.get(peerUid)?.name || peerUid
+}
+
+function elementName(uid: string) {
+  const element = elementByUid.value.get(uid)
+  return element ? `${element.name} (${element.type})` : uid
+}
+
+function elementOptionLabel(element: ModelElement) {
+  return `${element.name} (${element.type}) - ${element.element_uid}`
 }
 
 function statusLabel(status: string) {
@@ -1537,6 +1695,14 @@ onMounted(load)
   width: 180px;
 }
 
+.relation-filter {
+  align-items: stretch;
+}
+
+.relation-filter .el-select {
+  width: 160px;
+}
+
 .viewer-row {
   margin-top: 18px;
   align-items: stretch;
@@ -1635,7 +1801,7 @@ onMounted(load)
 
 .graph-edge {
   stroke: #6b7280;
-  stroke-width: 1.4;
+  stroke-width: 1.8;
   opacity: 0.62;
 }
 
@@ -1669,13 +1835,15 @@ onMounted(load)
 
 .graph-node text {
   fill: var(--ink);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 700;
   pointer-events: none;
 }
 
 .graph-node .node-type {
   fill: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .detail-panel h3 {
