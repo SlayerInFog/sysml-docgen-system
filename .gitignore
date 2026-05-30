@@ -14,6 +14,7 @@ dist/
 logs/
 backend/app/uploads/
 backend/app/generated/
+notebooks/.ipynb_checkpoints/
 
 # Browser profiles
 .chrome-profile/
