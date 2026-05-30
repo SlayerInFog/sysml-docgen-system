@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+﻿from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -10,6 +10,7 @@ from app.services.audit import write_log
 router = APIRouter(prefix="/auth", tags=["认证"])
 
 
+# 创建新用户并保存账号信息。
 @router.post("/register", response_model=UserOut, status_code=201)
 def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     if payload.role not in {"author", "reader"}:
@@ -31,6 +32,7 @@ def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     return user
 
 
+# 校验账号密码并签发访问令牌。
 @router.post("/login", response_model=TokenOut)
 def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenOut:
     user = db.query(User).filter(User.username == payload.username).first()
@@ -43,11 +45,13 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenOut:
     return TokenOut(access_token=token, user=user)
 
 
+# 返回当前登录用户信息。
 @router.get("/me", response_model=UserOut)
 def me(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+# 返回系统用户列表。
 @router.get("/users", response_model=list[UserOut])
 def users(
     _: User = Depends(require_roles("admin")),
@@ -56,6 +60,7 @@ def users(
     return db.query(User).order_by(User.created_at.desc()).all()
 
 
+# 返回成员选择所需的用户选项。
 @router.get("/users/options", response_model=list[UserOut])
 def user_options(
     _: User = Depends(get_current_user),
@@ -64,6 +69,7 @@ def user_options(
     return db.query(User).filter(User.is_active.is_(True)).order_by(User.username.asc()).all()
 
 
+# 更新用户角色和基础信息。
 @router.patch("/users/{user_id}", response_model=UserOut)
 def update_user(
     user_id: int,

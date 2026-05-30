@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <h1 class="page-title">文档生成</h1>
     <el-card>
@@ -72,6 +72,7 @@ import { documentApi, modelApi, projectApi, type GeneratedDocument, type Project
 const auth = useAuthStore()
 const canWrite = computed(() => auth.canEdit)
 
+// 校验当前用户是否允许写操作。
 function ensureWriteAccess() {
   if (canWrite.value) return true
   ElMessage.warning('读者角色仅可查看，不能执行写操作')
@@ -91,6 +92,7 @@ const form = reactive({
   title: '',
 })
 
+// 加载页面所需的基础数据。
 async function load() {
   projects.value = await projectApi.list()
   documents.value = await documentApi.list()
@@ -98,6 +100,7 @@ async function load() {
   models.value = await modelApi.list()
 }
 
+// 处理 loadRelated 相关逻辑。
 async function loadRelated() {
   models.value = await modelApi.list(form.project_id)
   templates.value = await documentApi.templates(form.project_id)
@@ -111,6 +114,7 @@ async function loadRelated() {
   }
 }
 
+// 根据选定模型和模板生成文档。
 async function generate() {
   if (!ensureWriteAccess()) return
   if (!form.project_id || !form.model_id || !form.template_id || !form.title) {
@@ -135,10 +139,12 @@ async function generate() {
   }
 }
 
+// 预览当前内容或记录。
 function preview(row: GeneratedDocument) {
   selected.value = row
 }
 
+// 删除指定记录并刷新列表。
 async function remove(row: GeneratedDocument) {
   if (!ensureWriteAccess()) return
   try {
@@ -156,6 +162,7 @@ async function remove(row: GeneratedDocument) {
   }
 }
 
+// 下载指定格式的导出文件。
 async function download(id: number, fmt: 'html' | 'docx' | 'pdf') {
   try {
     const blob = await documentApi.export(id, fmt)

@@ -1,4 +1,4 @@
-import json
+﻿import json
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -28,6 +28,7 @@ router = APIRouter(prefix="/versioning", tags=["版本管理"])
 VersionItemType = Literal["model", "template"]
 
 
+# 查询版本分支列表。
 @router.get("/branches", response_model=list[VersionBranchOut])
 def list_branches(
     item_type: VersionItemType,
@@ -44,6 +45,7 @@ def list_branches(
     return query.order_by(VersionBranch.updated_at.desc()).all()
 
 
+# 创建版本分支。
 @router.post("/branches", response_model=VersionBranchOut, status_code=201)
 def create_branch(
     payload: VersionBranchCreate,
@@ -96,6 +98,7 @@ def create_branch(
     return branch
 
 
+# 重命名版本分支。
 @router.patch("/branches/{branch_id}", response_model=VersionBranchOut)
 def update_branch(
     branch_id: int,
@@ -123,6 +126,7 @@ def update_branch(
     return branch
 
 
+# 删除空版本分支。
 @router.delete("/branches/{branch_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_branch(
     branch_id: int,
@@ -149,6 +153,7 @@ def delete_branch(
     write_log(db, user, "delete_version_branch", f"{branch.item_type}_branch", branch_id, branch.name)
 
 
+# 查询版本标签列表。
 @router.get("/tags", response_model=list[VersionTagOut])
 def list_tags(
     item_type: VersionItemType,
@@ -169,6 +174,7 @@ def list_tags(
     return query.order_by(VersionTag.created_at.desc()).all()
 
 
+# 为模型或模板创建版本标签。
 @router.post("/tags", response_model=VersionTagOut, status_code=201)
 def create_tag(
     payload: VersionTagCreate,
@@ -240,6 +246,7 @@ def create_tag(
     return tag
 
 
+# 回滚到指定模型或模板版本。
 @router.post("/rollback", response_model=VersionRollbackRecordOut, status_code=201)
 def rollback(
     payload: VersionRollbackCreate,
@@ -306,6 +313,7 @@ def rollback(
     return record
 
 
+# 查询版本回滚记录。
 @router.get("/rollback-records", response_model=list[VersionRollbackRecordOut])
 def list_rollback_records(
     item_type: VersionItemType,
@@ -326,6 +334,7 @@ def list_rollback_records(
     return query.order_by(VersionRollbackRecord.created_at.desc()).all()
 
 
+# 处理 clone_model_version 相关逻辑。
 def clone_model_version(
     db: Session,
     target_model: SysMLModel,
@@ -385,6 +394,7 @@ def clone_model_version(
     return new_model
 
 
+# 处理 clone_template_version 相关逻辑。
 def clone_template_version(
     db: Session,
     target_template: DocumentTemplate,
@@ -414,12 +424,14 @@ def clone_template_version(
     return new_template
 
 
+# 处理 normalize_item_type 相关逻辑。
 def normalize_item_type(item_type: str) -> VersionItemType:
     if item_type not in {"model", "template"}:
         raise HTTPException(status_code=400, detail="版本对象类型只支持 model 或 template")
     return item_type  # type: ignore[return-value]
 
 
+# 处理 normalize_branch_name 相关逻辑。
 def normalize_branch_name(name: str | None) -> str:
     normalized = (name or "").strip()[:120]
     if not normalized:
@@ -427,6 +439,7 @@ def normalize_branch_name(name: str | None) -> str:
     return normalized
 
 
+# 处理 ensure_unique_name 相关逻辑。
 def ensure_unique_name(
     db: Session,
     model_cls,
@@ -444,6 +457,7 @@ def ensure_unique_name(
         raise HTTPException(status_code=400, detail=message)
 
 
+# 处理 ensure_project_access 相关逻辑。
 def ensure_project_access(db: Session, project_id: int, user: User, write: bool = False) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -454,6 +468,7 @@ def ensure_project_access(db: Session, project_id: int, user: User, write: bool 
     return project
 
 
+# 处理 ensure_model_access 相关逻辑。
 def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     model = db.query(SysMLModel).join(Project).filter(SysMLModel.id == model_id).first()
     if not model:
@@ -463,6 +478,7 @@ def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     return model
 
 
+# 处理 ensure_template_access 相关逻辑。
 def ensure_template_access(db: Session, template_id: int, user: User) -> DocumentTemplate:
     template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
     if not template:
@@ -472,6 +488,7 @@ def ensure_template_access(db: Session, template_id: int, user: User) -> Documen
     return template
 
 
+# 处理 ensure_branch_access 相关逻辑。
 def ensure_branch_access(db: Session, branch_id: int, user: User, write: bool = False) -> VersionBranch:
     branch = db.query(VersionBranch).outerjoin(Project).filter(VersionBranch.id == branch_id).first()
     if not branch:
@@ -481,6 +498,7 @@ def ensure_branch_access(db: Session, branch_id: int, user: User, write: bool = 
     return branch
 
 
+# 处理 ensure_tag_access 相关逻辑。
 def ensure_tag_access(db: Session, tag_id: int, user: User) -> VersionTag:
     tag = db.query(VersionTag).outerjoin(Project).filter(VersionTag.id == tag_id).first()
     if not tag:

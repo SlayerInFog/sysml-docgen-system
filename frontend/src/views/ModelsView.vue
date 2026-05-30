@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <h1 class="page-title">模型管理</h1>
     <el-card class="ingest-card">
@@ -623,6 +623,7 @@ import {
 const auth = useAuthStore()
 const canWrite = computed(() => auth.canEdit)
 
+// 校验当前用户是否允许写操作。
 function ensureWriteAccess() {
   if (canWrite.value) return true
   ElMessage.warning('读者角色仅可查看，不能执行写操作')
@@ -907,15 +908,18 @@ const rollbackTargetTags = computed(() => {
   return tags.value.filter((tag) => tag.branch_id === rollbackBranch.value?.id)
 })
 
+// 记录用户选择的模型文件。
 function onFile(event: Event) {
   file.value = (event.target as HTMLInputElement).files?.[0] || null
 }
 
+// 按当前页和页大小截取列表。
 function paginate<T>(items: T[], page: number, pageSize: number) {
   const start = (page - 1) * pageSize
   return items.slice(start, start + pageSize)
 }
 
+// 计算环形图布局坐标。
 function radialLayout(visible: ModelElement[]): GraphNode[] {
   const centerX = 380
   const centerY = 215
@@ -934,6 +938,7 @@ function radialLayout(visible: ModelElement[]): GraphNode[] {
   })
 }
 
+// 计算分层图布局坐标。
 function hierarchyLayout(visible: ModelElement[]): GraphNode[] {
   const visibleUids = new Set(visible.map((element) => element.element_uid))
   const depthCache = new Map<string, number>()
@@ -973,6 +978,7 @@ function hierarchyLayout(visible: ModelElement[]): GraphNode[] {
   return nodes
 }
 
+// 计算力导向图布局坐标。
 function forceLayout(visible: ModelElement[]): GraphNode[] {
   const nodes = radialLayout(visible).map((node) => ({ ...node }))
   const indexByUid = new Map(nodes.map((node, index) => [node.uid, index]))
@@ -1014,6 +1020,7 @@ function forceLayout(visible: ModelElement[]): GraphNode[] {
   return nodes.map((node) => ({ ...node, x: Math.round(node.x), y: Math.round(node.y) }))
 }
 
+// 把鼠标坐标转换为 SVG 坐标。
 function graphPoint(event: PointerEvent | WheelEvent) {
   const svg = graphSvgRef.value
   if (!svg) return { x: 0, y: 0 }
@@ -1026,6 +1033,7 @@ function graphPoint(event: PointerEvent | WheelEvent) {
   return { x: transformed.x, y: transformed.y }
 }
 
+// 处理 toGraphContentPoint 相关逻辑。
 function toGraphContentPoint(event: PointerEvent) {
   const point = graphPoint(event)
   return {
@@ -1034,6 +1042,7 @@ function toGraphContentPoint(event: PointerEvent) {
   }
 }
 
+// 开始拖动画布。
 function startGraphPan(event: PointerEvent) {
   if (event.button !== 0) return
   const point = graphPoint(event)
@@ -1048,6 +1057,7 @@ function startGraphPan(event: PointerEvent) {
   graphSvgRef.value?.setPointerCapture(event.pointerId)
 }
 
+// 开始拖动图节点。
 function startNodeDrag(event: PointerEvent, node: GraphNode) {
   if (event.button !== 0) return
   const point = toGraphContentPoint(event)
@@ -1063,6 +1073,7 @@ function startNodeDrag(event: PointerEvent, node: GraphNode) {
   ;(event.currentTarget as Element).setPointerCapture?.(event.pointerId)
 }
 
+// 处理画布或节点拖动。
 function moveGraphPointer(event: PointerEvent) {
   if (graphDrag.mode === 'pan') {
     const point = graphPoint(event)
@@ -1082,6 +1093,7 @@ function moveGraphPointer(event: PointerEvent) {
   }
 }
 
+// 结束画布拖动。
 function endGraphPointer(event: PointerEvent) {
   try {
     graphSvgRef.value?.releasePointerCapture?.(event.pointerId)
@@ -1092,6 +1104,7 @@ function endGraphPointer(event: PointerEvent) {
   graphDrag.uid = ''
 }
 
+// 结束节点拖动并处理点击。
 function endNodePointer(event: PointerEvent, row: ModelElement) {
   try {
     ;(event.currentTarget as Element).releasePointerCapture?.(event.pointerId)
@@ -1109,10 +1122,12 @@ function endNodePointer(event: PointerEvent, row: ModelElement) {
   focusElement(row)
 }
 
+// 处理 handleGraphWheel 相关逻辑。
 function handleGraphWheel(event: WheelEvent) {
   zoomGraph(event.deltaY > 0 ? 0.9 : 1.1, graphPoint(event))
 }
 
+// 按指定比例缩放图视图。
 function zoomGraph(factor: number, origin = { x: 380, y: 215 }) {
   const nextScale = Math.min(2.6, Math.max(0.45, graphView.scale * factor))
   const contentX = (origin.x - graphView.x) / graphView.scale
@@ -1122,6 +1137,7 @@ function zoomGraph(factor: number, origin = { x: 380, y: 215 }) {
   graphView.scale = nextScale
 }
 
+// 自动适配图视图范围。
 function fitGraph() {
   if (!graphNodes.value.length) {
     resetGraphView()
@@ -1138,23 +1154,27 @@ function fitGraph() {
   graphView.y = 430 / 2 - ((minY + maxY) / 2) * graphView.scale
 }
 
+// 处理 resetGraphView 相关逻辑。
 function resetGraphView() {
   graphView.scale = 1
   graphView.x = 0
   graphView.y = 0
 }
 
+// 处理 resetGraphPositions 相关逻辑。
 function resetGraphPositions() {
   Object.keys(manualGraphPositions).forEach((key) => delete manualGraphPositions[key])
   resetGraphView()
 }
 
+// 处理 handleImportTabChange 相关逻辑。
 function handleImportTabChange(name: string | number | TabsPaneContext) {
   if (name === 'mms' && !openMbeeEndpoints.value.length) {
     loadOpenMbeeInfo()
   }
 }
 
+// 处理 loadOpenMbeeInfo 相关逻辑。
 async function loadOpenMbeeInfo() {
   openMbeeLoading.value = true
   try {
@@ -1168,6 +1188,7 @@ async function loadOpenMbeeInfo() {
   }
 }
 
+// 处理 testMmsConnection 相关逻辑。
 async function testMmsConnection() {
   if (!ensureWriteAccess()) return
   openMbeeTesting.value = true
@@ -1181,6 +1202,7 @@ async function testMmsConnection() {
   }
 }
 
+// 处理 loadMmsProjects 相关逻辑。
 async function loadMmsProjects() {
   if (!ensureWriteAccess()) return
   mmsProjectsLoading.value = true
@@ -1195,6 +1217,7 @@ async function loadMmsProjects() {
   }
 }
 
+// 处理 loadMmsRefs 相关逻辑。
 async function loadMmsRefs() {
   if (!ensureWriteAccess()) return
   if (!mmsImportForm.mms_project_id) return
@@ -1210,6 +1233,7 @@ async function loadMmsRefs() {
   }
 }
 
+// 处理 importFromMms 相关逻辑。
 async function importFromMms() {
   if (!ensureWriteAccess()) return
   if (!mmsImportForm.local_project_id || !mmsImportForm.name.trim() || !mmsImportForm.mms_project_id || !mmsImportForm.ref_id) {
@@ -1245,6 +1269,7 @@ async function importFromMms() {
   }
 }
 
+// 加载页面所需的基础数据。
 async function load() {
   projects.value = await projectApi.list()
   models.value = await modelApi.list()
@@ -1258,6 +1283,7 @@ async function load() {
   await loadOpenMbeeInfo()
 }
 
+// 处理 submit 相关逻辑。
 async function submit() {
   if (!ensureWriteAccess()) return
   if (!upload.project_id || !upload.name || !file.value) {
@@ -1283,6 +1309,7 @@ async function submit() {
   }
 }
 
+// 处理 selectModel 相关逻辑。
 async function selectModel(row: SysMLModel) {
   selected.value = row
   if (versionProjectId.value !== row.project_id) {
@@ -1299,6 +1326,7 @@ async function selectModel(row: SysMLModel) {
   relations.value = graph.relations
 }
 
+// 处理 loadModelVersioning 相关逻辑。
 async function loadModelVersioning() {
   if (!versionProjectId.value) return
   const params = { item_type: 'model' as const, project_id: versionProjectId.value }
@@ -1307,6 +1335,7 @@ async function loadModelVersioning() {
   rollbackRecords.value = await versioningApi.rollbackRecords(params)
 }
 
+// 处理 createBranch 相关逻辑。
 async function createBranch() {
   if (!ensureWriteAccess()) return
   if (!versionProjectId.value || !branchForm.name.trim()) {
@@ -1329,6 +1358,7 @@ async function createBranch() {
   }
 }
 
+// 处理 selectBranch 相关逻辑。
 function selectBranch(row: VersionBranch) {
   rollbackForm.branch_id = row.id
   tagForm.branch_id = row.id
@@ -1338,12 +1368,14 @@ function selectBranch(row: VersionBranch) {
   resetInvalidRollbackTargets()
 }
 
+// 处理 prepareTag 相关逻辑。
 function prepareTag(row: VersionBranch) {
   if (!ensureWriteAccess()) return
   tagForm.branch_id = row.id
   tagForm.model_id = row.head_model_id
 }
 
+// 处理 renameBranch 相关逻辑。
 async function renameBranch(row: VersionBranch) {
   if (!ensureWriteAccess()) return
   try {
@@ -1365,6 +1397,7 @@ async function renameBranch(row: VersionBranch) {
   }
 }
 
+// 处理 deleteBranch 相关逻辑。
 async function deleteBranch(row: VersionBranch) {
   if (!ensureWriteAccess()) return
   try {
@@ -1386,6 +1419,7 @@ async function deleteBranch(row: VersionBranch) {
   }
 }
 
+// 处理 createTag 相关逻辑。
 async function createTag() {
   if (!ensureWriteAccess()) return
   if (!versionProjectId.value || !tagForm.name.trim() || !tagForm.model_id) {
@@ -1416,6 +1450,7 @@ async function createTag() {
   }
 }
 
+// 处理 rollbackModel 相关逻辑。
 async function rollbackModel() {
   if (!ensureWriteAccess()) return
   if (!versionProjectId.value || !rollbackForm.branch_id) {
@@ -1450,6 +1485,7 @@ async function rollbackModel() {
   }
 }
 
+// 处理 resetInvalidRollbackTargets 相关逻辑。
 function resetInvalidRollbackTargets() {
   if (rollbackForm.tag_id && !rollbackTargetTags.value.some((tag) => tag.id === rollbackForm.tag_id)) {
     rollbackForm.tag_id = undefined
@@ -1462,14 +1498,17 @@ function resetInvalidRollbackTargets() {
   }
 }
 
+// 处理 modelLabel 相关逻辑。
 function modelLabel(model?: SysMLModel) {
   return model ? modelVersionLabel(model) : '未设置'
 }
 
+// 处理 branchName 相关逻辑。
 function branchName(id?: number) {
   return id ? branches.value.find((branch) => branch.id === id)?.name || `#${id}` : '未关联'
 }
 
+// 处理 extractMmsList 相关逻辑。
 function extractMmsList(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) return value.filter(isRecord)
   if (!isRecord(value)) return []
@@ -1484,20 +1523,24 @@ function extractMmsList(value: unknown): Record<string, unknown>[] {
   return []
 }
 
+// 处理 isRecord 相关逻辑。
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
+// 处理 mmsItemId 相关逻辑。
 function mmsItemId(item: Record<string, unknown>) {
   return String(item.id || item._id || item.projectId || item.refId || item.name || '')
 }
 
+// 处理 mmsItemLabel 相关逻辑。
 function mmsItemLabel(item: Record<string, unknown>) {
   const id = mmsItemId(item)
   const name = String(item.name || item._name || item.title || id)
   return id && id !== name ? `${name} (${id})` : name
 }
 
+// 处理 copyToClipboard 相关逻辑。
 async function copyToClipboard(value: string) {
   try {
     await navigator.clipboard.writeText(value)
@@ -1515,10 +1558,12 @@ async function copyToClipboard(value: string) {
   }
 }
 
+// 处理 openJupyter 相关逻辑。
 function openJupyter() {
   window.open(jupyterUrl, '_blank', 'noopener')
 }
 
+// 处理 editModel 相关逻辑。
 function editModel(row: SysMLModel) {
   if (!ensureWriteAccess()) return
   editingModelId.value = row.id
@@ -1529,6 +1574,7 @@ function editModel(row: SysMLModel) {
   modelDialog.value = true
 }
 
+// 处理 saveModel 相关逻辑。
 async function saveModel() {
   if (!ensureWriteAccess()) return
   if (!editingModelId.value) return
@@ -1548,6 +1594,7 @@ async function saveModel() {
   }
 }
 
+// 处理 removeModel 相关逻辑。
 async function removeModel(row: SysMLModel) {
   if (!ensureWriteAccess()) return
   try {
@@ -1570,11 +1617,13 @@ async function removeModel(row: SysMLModel) {
   }
 }
 
+// 处理 resetModelForm 相关逻辑。
 function resetModelForm() {
   editingModelId.value = undefined
   Object.assign(modelForm, { name: '', description: '' })
 }
 
+// 处理 focusElement 相关逻辑。
 function focusElement(row: ModelElement) {
   selectedElement.value = row
   if (elements.value.length > graphNodeLimit.value && graphScope.value === 'important') {
@@ -1583,6 +1632,7 @@ function focusElement(row: ModelElement) {
   syncTreeSelection(row.element_uid)
 }
 
+// 处理 focusTreeNode 相关逻辑。
 function focusTreeNode(node: ElementTreeNode) {
   selectedElement.value = node.element
   if (elements.value.length > graphNodeLimit.value && graphScope.value === 'important') {
@@ -1591,11 +1641,13 @@ function focusTreeNode(node: ElementTreeNode) {
   syncTreeSelection(node.uid)
 }
 
+// 处理 focusRelation 相关逻辑。
 function focusRelation(row: ModelRelation) {
   const element = elementByUid.value.get(row.source_uid) || elementByUid.value.get(row.target_uid)
   if (element) focusElement(element)
 }
 
+// 处理 createRelation 相关逻辑。
 function createRelation() {
   if (!ensureWriteAccess()) return
   if (!selected.value) return
@@ -1606,6 +1658,7 @@ function createRelation() {
   relationDialog.value = true
 }
 
+// 处理 editRelation 相关逻辑。
 function editRelation(row: ModelRelation) {
   if (!ensureWriteAccess()) return
   editingRelationId.value = row.id
@@ -1618,6 +1671,7 @@ function editRelation(row: ModelRelation) {
   relationDialog.value = true
 }
 
+// 处理 saveRelation 相关逻辑。
 async function saveRelation() {
   if (!ensureWriteAccess()) return
   if (!selected.value) return
@@ -1643,6 +1697,7 @@ async function saveRelation() {
   }
 }
 
+// 处理 removeRelation 相关逻辑。
 async function removeRelation(row: ModelRelation) {
   if (!ensureWriteAccess()) return
   try {
@@ -1659,6 +1714,7 @@ async function removeRelation(row: ModelRelation) {
   }
 }
 
+// 处理 refreshAfterRelationEdit 相关逻辑。
 async function refreshAfterRelationEdit(modelId: number, focusUid?: string) {
   models.value = await modelApi.list()
   const nextModel = models.value.find((item) => item.id === modelId)
@@ -1673,11 +1729,13 @@ async function refreshAfterRelationEdit(modelId: number, focusUid?: string) {
   await loadModelVersioning()
 }
 
+// 处理 resetRelationForm 相关逻辑。
 function resetRelationForm() {
   editingRelationId.value = undefined
   Object.assign(relationForm, { source_uid: '', target_uid: '', relation_type: '', label: '' })
 }
 
+// 处理 editElement 相关逻辑。
 function editElement(row: ModelElement) {
   if (!ensureWriteAccess()) return
   selectedElement.value = row
@@ -1686,6 +1744,7 @@ function editElement(row: ModelElement) {
   editDialog.value = true
 }
 
+// 处理 saveElement 相关逻辑。
 async function saveElement() {
   if (!ensureWriteAccess()) return
   if (!editing.value) return
@@ -1714,6 +1773,7 @@ async function saveElement() {
   }
 }
 
+// 处理 loadCompare 相关逻辑。
 async function loadCompare() {
   if (!selected.value || !targetModelId.value) return
   try {
@@ -1723,6 +1783,7 @@ async function loadCompare() {
   }
 }
 
+// 处理 exportCompareCsv 相关逻辑。
 function exportCompareCsv() {
   if (!compareResult.value) return
   const rows = [
@@ -1754,6 +1815,7 @@ function exportCompareCsv() {
   downloadText(compareFileName('csv'), rows.map((row) => row.map(escapeCsv).join(',')).join('\n'), 'text/csv;charset=utf-8')
 }
 
+// 处理 exportCompareHtml 相关逻辑。
 function exportCompareHtml() {
   if (!compareResult.value) return
   const result = compareResult.value
@@ -1776,10 +1838,12 @@ function exportCompareHtml() {
   downloadText(compareFileName('html'), html, 'text/html;charset=utf-8')
 }
 
+// 处理 compactName 相关逻辑。
 function compactName(value: string) {
   return value.length > 8 ? `${value.slice(0, 7)}...` : value
 }
 
+// 处理 relationPeerName 相关逻辑。
 function relationPeerName(relation: ModelRelation) {
   if (!selectedElement.value) return ''
   const peerUid =
@@ -1787,15 +1851,18 @@ function relationPeerName(relation: ModelRelation) {
   return elementByUid.value.get(peerUid)?.name || peerUid
 }
 
+// 处理 elementName 相关逻辑。
 function elementName(uid: string) {
   const element = elementByUid.value.get(uid)
   return element ? `${element.name} (${element.type})` : uid
 }
 
+// 处理 elementOptionLabel 相关逻辑。
 function elementOptionLabel(element: ModelElement) {
   return `${element.name} (${element.type}) - ${element.element_uid}`
 }
 
+// 处理 statusLabel 相关逻辑。
 function statusLabel(status: string) {
   return (
     {
@@ -1809,11 +1876,13 @@ function statusLabel(status: string) {
   )
 }
 
+// 处理 modelVersionLabel 相关逻辑。
 function modelVersionLabel(model: SysMLModel) {
   const tag = model.version_tag ? ` @ ${model.version_tag}` : ''
   return `${model.name} ${model.branch_name} v${model.version}${tag}`
 }
 
+// 清除当前图节点聚焦状态。
 function clearFocus() {
   selectedElement.value = null
   modelTreeRef.value?.setCurrentKey()
@@ -1822,6 +1891,7 @@ function clearFocus() {
   }
 }
 
+// 处理 nodeTooltip 相关逻辑。
 function nodeTooltip(element: ModelElement) {
   const childCount = childCountByUid.value.get(element.element_uid) || 0
   const relationCount = relationDegreeByUid.value.get(element.element_uid) || 0
@@ -1829,6 +1899,7 @@ function nodeTooltip(element: ModelElement) {
   return `名称：${element.name}\n类型：${element.type}\nUID：${element.element_uid}\n父级：${element.parent_uid || '无'}\n子节点：${childCount}\n关联关系：${relationCount}${documentation}`
 }
 
+// 处理 compareFileName 相关逻辑。
 function compareFileName(ext: 'csv' | 'html') {
   const base = compareResult.value?.base_model.name || 'base'
   const target = compareResult.value?.target_model.name || 'target'
@@ -1836,6 +1907,7 @@ function compareFileName(ext: 'csv' | 'html') {
   return `model-compare-${safe}.${ext}`
 }
 
+// 处理 downloadText 相关逻辑。
 function downloadText(filename: string, content: string, type: string) {
   const prefix = type.includes('csv') ? '\uFEFF' : ''
   const blob = new Blob([prefix + content], { type })
@@ -1849,10 +1921,12 @@ function downloadText(filename: string, content: string, type: string) {
   URL.revokeObjectURL(url)
 }
 
+// 处理 escapeCsv 相关逻辑。
 function escapeCsv(value: unknown) {
   return `"${String(value).replace(/"/g, '""')}"`
 }
 
+// 处理 escapeHtml 相关逻辑。
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')
@@ -1862,6 +1936,7 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#039;')
 }
 
+// 处理 syncTreeSelection 相关逻辑。
 async function syncTreeSelection(uid: string) {
   await nextTick()
   const tree = modelTreeRef.value

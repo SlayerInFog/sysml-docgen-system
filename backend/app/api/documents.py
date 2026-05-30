@@ -1,4 +1,4 @@
-from pathlib import Path
+﻿from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
@@ -35,6 +35,7 @@ router = APIRouter(prefix="/documents", tags=["文档生成"])
 settings = get_settings()
 
 
+# 创建文档模板。
 @router.post("/templates", response_model=TemplateOut, status_code=201)
 def create_template(
     payload: TemplateCreate,
@@ -68,6 +69,7 @@ def create_template(
     return template
 
 
+# 按项目和权限查询模板列表。
 @router.get("/templates", response_model=list[TemplateOut])
 def list_templates(project_id: int | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     query = db.query(DocumentTemplate)
@@ -76,6 +78,7 @@ def list_templates(project_id: int | None = None, user: User = Depends(get_curre
     return query.order_by(DocumentTemplate.project_id.isnot(None).desc(), DocumentTemplate.created_at.desc()).all()
 
 
+# 更新模板并保存历史版本。
 @router.patch("/templates/{template_id}", response_model=TemplateOut)
 def update_template(
     template_id: int,
@@ -119,6 +122,7 @@ def update_template(
     return template
 
 
+# 删除模板及历史记录。
 @router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_template(
     template_id: int,
@@ -136,6 +140,7 @@ def delete_template(
     write_log(db, user, "delete_template", "template", template_id, template_name)
 
 
+# 查询模板历史版本。
 @router.get("/templates/{template_id}/versions", response_model=list[TemplateVersionOut])
 def list_template_versions(
     template_id: int,
@@ -151,6 +156,7 @@ def list_template_versions(
     )
 
 
+# 回滚模板到指定历史版本。
 @router.post("/templates/{template_id}/rollback/{version_id}", response_model=TemplateOut)
 def rollback_template(
     template_id: int,
@@ -179,6 +185,7 @@ def rollback_template(
     return template
 
 
+# 预览模板渲染效果。
 @router.post("/templates/preview")
 def preview_template(
     payload: TemplatePreviewRequest,
@@ -218,6 +225,7 @@ def preview_template(
     return {"html": html}
 
 
+# 基于模型和模板生成文档。
 @router.post("/generate", response_model=GeneratedDocumentOut, status_code=201)
 def generate_document(
     payload: GenerateDocumentRequest,
@@ -253,6 +261,7 @@ def generate_document(
     return doc
 
 
+# 查询已生成文档列表。
 @router.get("", response_model=list[GeneratedDocumentOut])
 def list_generated(project_id: int | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     query = db.query(GeneratedDocument).join(Project)
@@ -265,6 +274,7 @@ def list_generated(project_id: int | None = None, user: User = Depends(get_curre
     return query.order_by(GeneratedDocument.created_at.desc()).all()
 
 
+# 读取生成文档详情。
 @router.get("/{document_id}", response_model=GeneratedDocumentOut)
 def get_generated(document_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = db.query(GeneratedDocument).join(Project).filter(GeneratedDocument.id == document_id).first()
@@ -275,6 +285,7 @@ def get_generated(document_id: int, user: User = Depends(get_current_user), db: 
     return doc
 
 
+# 删除已生成文档。
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_generated(document_id: int, user: User = Depends(require_roles("admin", "author")), db: Session = Depends(get_db)) -> None:
     doc = get_generated(document_id, user, db)
@@ -292,6 +303,7 @@ def delete_generated(document_id: int, user: User = Depends(require_roles("admin
     write_log(db, user, "delete_document", "document", document_id, doc_title)
 
 
+# 导出指定格式的文档文件。
 @router.get("/{document_id}/export/{fmt}")
 def export_document(document_id: int, fmt: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     doc = get_generated(document_id, user, db)
@@ -314,6 +326,7 @@ def export_document(document_id: int, fmt: str, user: User = Depends(get_current
     raise HTTPException(status_code=400, detail="导出格式只支持 html、docx、pdf")
 
 
+# 创建系统默认文档模板。
 @router.post("/templates/default", response_model=TemplateOut, status_code=201)
 def create_default_template(
     user: User = Depends(require_roles("admin", "author")),
@@ -336,6 +349,7 @@ def create_default_template(
     return template
 
 
+# 处理 _get_template_for_read 相关逻辑。
 def _get_template_for_read(db: Session, template_id: int, user: User) -> DocumentTemplate:
     template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
     if not template:
@@ -345,6 +359,7 @@ def _get_template_for_read(db: Session, template_id: int, user: User) -> Documen
     return template
 
 
+# 处理 _get_template_for_write 相关逻辑。
 def _get_template_for_write(db: Session, template_id: int, user: User) -> DocumentTemplate:
     template = db.query(DocumentTemplate).filter(DocumentTemplate.id == template_id).first()
     if not template:
@@ -354,6 +369,7 @@ def _get_template_for_write(db: Session, template_id: int, user: User) -> Docume
     return template
 
 
+# 处理 _save_template_version 相关逻辑。
 def _save_template_version(db: Session, template: DocumentTemplate, user: User) -> None:
     if template.version_tag:
         db.query(DocumentTemplateVersion).filter(
@@ -382,6 +398,7 @@ def _save_template_version(db: Session, template: DocumentTemplate, user: User) 
     )
 
 
+# 处理 _delete_template_rollback_records 相关逻辑。
 def _delete_template_rollback_records(db: Session, template_id: int) -> None:
     bind = db.get_bind()
     inspector = inspect(bind)
@@ -402,16 +419,19 @@ def _delete_template_rollback_records(db: Session, template_id: int) -> None:
     )
 
 
+# 处理 _normalize_branch 相关逻辑。
 def _normalize_branch(value: str | None) -> str:
     branch = (value or "main").strip()
     return branch[:80] or "main"
 
 
+# 处理 _normalize_tag 相关逻辑。
 def _normalize_tag(value: str | None) -> str | None:
     tag = (value or "").strip()
     return tag[:80] or None
 
 
+# 处理 _template_tag_exists 相关逻辑。
 def _template_tag_exists(
     db: Session,
     project_id: int | None,

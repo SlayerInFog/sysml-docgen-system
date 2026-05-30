@@ -1,4 +1,4 @@
-import json
+﻿import json
 import shutil
 from pathlib import Path
 from uuid import uuid4
@@ -36,6 +36,7 @@ router = APIRouter(prefix="/models", tags=["模型管理"])
 settings = get_settings()
 
 
+# 上传模型文件并解析为元素和关系。
 @router.post("/upload", response_model=SysMLModelOut, status_code=201)
 def upload_model(
     project_id: int = Form(...),
@@ -125,6 +126,7 @@ def upload_model(
     return model
 
 
+# 按权限和项目筛选模型列表。
 @router.get("", response_model=list[SysMLModelOut])
 def list_models(project_id: int | None = None, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     query = db.query(SysMLModel).join(Project)
@@ -137,6 +139,7 @@ def list_models(project_id: int | None = None, user: User = Depends(get_current_
     return query.order_by(SysMLModel.created_at.desc()).all()
 
 
+# 编辑模型信息并生成新版本。
 @router.patch("/{model_id}", response_model=SysMLModelOut)
 def update_model(
     model_id: int,
@@ -164,6 +167,7 @@ def update_model(
     return new_model
 
 
+# 删除模型及相关解析数据。
 @router.delete("/{model_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_model(
     model_id: int,
@@ -194,6 +198,7 @@ def delete_model(
     write_log(db, user, "delete_model", "model", model_id, model_name)
 
 
+# 对比两个模型版本的元素和关系差异。
 @router.get("/compare", response_model=ModelCompareOut)
 def compare_models(
     base_model_id: int,
@@ -249,12 +254,14 @@ def compare_models(
     )
 
 
+# 读取模型元素列表。
 @router.get("/{model_id}/elements", response_model=list[ModelElementOut])
 def list_elements(model_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ensure_model_access(db, model_id, user)
     return db.query(ModelElement).filter(ModelElement.model_id == model_id).order_by(ModelElement.type, ModelElement.name).all()
 
 
+# 读取模型图视图所需的元素和关系。
 @router.get("/{model_id}/graph", response_model=ModelGraphOut)
 def graph(model_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ensure_model_access(db, model_id, user)
@@ -266,6 +273,7 @@ def graph(model_id: int, user: User = Depends(get_current_user), db: Session = D
     )
 
 
+# 轻量编辑模型元素并生成新版本。
 @router.patch("/elements/{element_id}", response_model=ModelElementOut)
 def update_element(
     element_id: int,
@@ -305,6 +313,7 @@ def update_element(
     return new_element
 
 
+# 新增模型关系并生成新版本。
 @router.post("/{model_id}/relations", response_model=ModelRelationOut, status_code=201)
 def create_relation(
     model_id: int,
@@ -337,6 +346,7 @@ def create_relation(
     return new_relation
 
 
+# 修改模型关系并生成新版本。
 @router.patch("/relations/{relation_id}", response_model=ModelRelationOut)
 def update_relation(
     relation_id: int,
@@ -393,6 +403,7 @@ def update_relation(
     return new_relation
 
 
+# 删除模型关系并生成新版本。
 @router.delete("/relations/{relation_id}", response_model=SysMLModelOut)
 def delete_relation(
     relation_id: int,
@@ -427,6 +438,7 @@ def delete_relation(
     return new_model
 
 
+# 处理 ensure_model_access 相关逻辑。
 def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     model = db.query(SysMLModel).join(Project).filter(SysMLModel.id == model_id).first()
     if not model:
@@ -436,17 +448,20 @@ def ensure_model_access(db: Session, model_id: int, user: User) -> SysMLModel:
     return model
 
 
+# 处理 _ensure_model_edit_access 相关逻辑。
 def _ensure_model_edit_access(db: Session, model: SysMLModel, user: User) -> None:
     if not has_project_role(db, model.project_id, user, {"manager", "editor"}):
         raise HTTPException(status_code=403, detail="权限不足")
 
 
+# 处理 _ensure_relation_endpoint_exists 相关逻辑。
 def _ensure_relation_endpoint_exists(db: Session, model_id: int, element_uid: str, detail: str) -> None:
     exists = db.query(ModelElement.id).filter(ModelElement.model_id == model_id, ModelElement.element_uid == element_uid).first()
     if not exists:
         raise HTTPException(status_code=400, detail=detail)
 
 
+# 处理 _normalize_relation_uid 相关逻辑。
 def _normalize_relation_uid(value: str, empty_detail: str) -> str:
     uid = value.strip()
     if not uid:
@@ -454,6 +469,7 @@ def _normalize_relation_uid(value: str, empty_detail: str) -> str:
     return uid[:255]
 
 
+# 处理 _normalize_relation_type 相关逻辑。
 def _normalize_relation_type(value: str) -> str:
     relation_type = value.strip()
     if not relation_type:
@@ -461,11 +477,13 @@ def _normalize_relation_type(value: str) -> str:
     return relation_type[:80]
 
 
+# 处理 _normalize_relation_label 相关逻辑。
 def _normalize_relation_label(value: str | None) -> str | None:
     label = (value or "").strip()
     return label or None
 
 
+# 处理 _element_compare_item 相关逻辑。
 def _element_compare_item(element: ModelElement, change_fields: list[str] | None = None) -> ModelCompareItem:
     return ModelCompareItem(
         uid=element.element_uid,
@@ -475,6 +493,7 @@ def _element_compare_item(element: ModelElement, change_fields: list[str] | None
     )
 
 
+# 处理 _relation_compare_item 相关逻辑。
 def _relation_compare_item(relation: tuple[str, str, str, str]) -> RelationCompareItem:
     source_uid, target_uid, relation_type, label = relation
     return RelationCompareItem(
@@ -485,16 +504,19 @@ def _relation_compare_item(relation: tuple[str, str, str, str]) -> RelationCompa
     )
 
 
+# 处理 _normalize_branch 相关逻辑。
 def _normalize_branch(value: str | None) -> str:
     branch = (value or "main").strip()
     return branch[:80] or "main"
 
 
+# 处理 _normalize_tag 相关逻辑。
 def _normalize_tag(value: str | None) -> str | None:
     tag = (value or "").strip()
     return tag[:80] or None
 
 
+# 处理 _model_tag_exists 相关逻辑。
 def _model_tag_exists(db: Session, project_id: int, name: str, tag: str) -> bool:
     return bool(
         db.query(SysMLModel)
@@ -503,6 +525,7 @@ def _model_tag_exists(db: Session, project_id: int, name: str, tag: str) -> bool
     )
 
 
+# 处理 _delete_model_versioning_records 相关逻辑。
 def _delete_model_versioning_records(db: Session, model_id: int) -> None:
     bind = db.get_bind()
     inspector = inspect(bind)
@@ -530,6 +553,7 @@ def _delete_model_versioning_records(db: Session, model_id: int) -> None:
         )
 
 
+# 处理 _can_remove_model_file 相关逻辑。
 def _can_remove_model_file(db: Session, model: SysMLModel) -> bool:
     if not model.stored_path:
         return False
@@ -541,6 +565,7 @@ def _can_remove_model_file(db: Session, model: SysMLModel) -> bool:
     return sibling is None
 
 
+# 处理 _clone_model_for_update 相关逻辑。
 def _clone_model_for_update(db: Session, source_model: SysMLModel, user: User, status: str) -> SysMLModel:
     latest = (
         db.query(SysMLModel)

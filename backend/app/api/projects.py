@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+﻿from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ USER_PROJECT_ROLE_LIMITS = {
 }
 
 
+# 创建项目并设置当前用户为负责人。
 @router.post("", response_model=ProjectOut, status_code=201)
 def create_project(
     payload: ProjectCreate,
@@ -42,6 +43,7 @@ def create_project(
     return project
 
 
+# 按当前用户权限返回项目列表。
 @router.get("", response_model=list[ProjectOut])
 def list_projects(
     user: User = Depends(get_current_user),
@@ -55,6 +57,7 @@ def list_projects(
     return query.order_by(Project.created_at.desc()).all()
 
 
+# 读取单个项目详情。
 @router.get("/{project_id}", response_model=ProjectOut)
 def get_project(project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
@@ -65,6 +68,7 @@ def get_project(project_id: int, user: User = Depends(get_current_user), db: Ses
     return project
 
 
+# 更新项目基础信息。
 @router.patch("/{project_id}", response_model=ProjectOut)
 def update_project(
     project_id: int,
@@ -83,6 +87,7 @@ def update_project(
     return project
 
 
+# 删除指定项目。
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(
     project_id: int,
@@ -100,6 +105,7 @@ def delete_project(
     write_log(db, user, "delete_project", "project", project_id, project_name)
 
 
+# 读取项目成员列表。
 @router.get("/{project_id}/members", response_model=list[ProjectMemberOut])
 def list_project_members(
     project_id: int,
@@ -133,6 +139,7 @@ def list_project_members(
     return result
 
 
+# 添加项目成员并校验角色权限。
 @router.post("/{project_id}/members", response_model=ProjectMemberOut, status_code=201)
 def add_project_member(
     project_id: int,
@@ -160,6 +167,7 @@ def add_project_member(
     return _member_out(member)
 
 
+# 更新项目成员角色。
 @router.patch("/{project_id}/members/{member_id}", response_model=ProjectMemberOut)
 def update_project_member(
     project_id: int,
@@ -182,6 +190,7 @@ def update_project_member(
     return _member_out(member)
 
 
+# 移除项目成员。
 @router.delete("/{project_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
 def remove_project_member(
     project_id: int,
@@ -199,6 +208,7 @@ def remove_project_member(
     write_log(db, user, "remove_project_member", "project", project_id, member_name)
 
 
+# 判断用户是否有项目访问权限。
 def has_project_access(db: Session, project: Project, user: User) -> bool:
     if user.role == "admin" or project.owner_id == user.id:
         return True
@@ -210,6 +220,7 @@ def has_project_access(db: Session, project: Project, user: User) -> bool:
     )
 
 
+# 判断用户是否具备指定项目角色。
 def has_project_role(db: Session, project_id: int, user: User, roles: set[str] | None = None) -> bool:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -226,6 +237,7 @@ def has_project_role(db: Session, project_id: int, user: User, roles: set[str] |
     return query.first() is not None
 
 
+# 校验项目成员管理权限。
 def ensure_project_manage_access(db: Session, project_id: int, user: User) -> Project:
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
@@ -238,12 +250,14 @@ def ensure_project_manage_access(db: Session, project_id: int, user: User) -> Pr
     return project
 
 
+# 校验系统角色允许分配的项目角色。
 def validate_project_role_for_user(user: User, project_role: str) -> None:
     allowed_roles = USER_PROJECT_ROLE_LIMITS.get(user.role, {"viewer"})
     if project_role not in allowed_roles:
         raise HTTPException(status_code=400, detail="该用户全局角色不允许授予此项目角色")
 
 
+# 处理 _member_out 相关逻辑。
 def _member_out(member: ProjectMember) -> ProjectMemberOut:
     return ProjectMemberOut(
         id=member.id,

@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <main class="login-page">
     <section class="login-intro" aria-label="系统介绍">
       <div class="brand-lockup">
@@ -137,6 +137,7 @@ const registerRules: FormRules<typeof registerForm> = {
   role: [{ required: true, message: '请选择角色', trigger: 'change' }],
 }
 
+// 统一转换接口错误提示。
 function normalizeErrorMessage(error: unknown, fallback: string) {
   const message = apiError(error, fallback)
   if (Array.isArray(message)) {
@@ -148,6 +149,7 @@ function normalizeErrorMessage(error: unknown, fallback: string) {
   return fallback
 }
 
+// 处理登录表单提交。
 async function handleLogin() {
   const valid = await loginFormRef.value?.validate().catch(() => false)
   if (!valid) return
@@ -164,6 +166,7 @@ async function handleLogin() {
   }
 }
 
+// 处理注册表单提交。
 async function handleRegister() {
   const valid = await registerFormRef.value?.validate().catch(() => false)
   if (!valid) return

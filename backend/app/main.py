@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+﻿from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError
@@ -36,6 +36,7 @@ app.include_router(versioning.router, prefix="/api")
 app.include_router(openmbee.router, prefix="/api")
 
 
+# 处理 operational_error_handler 相关逻辑。
 @app.exception_handler(OperationalError)
 def operational_error_handler(_, exc: OperationalError):
     if _is_mysql_lock_error(exc):
@@ -46,11 +47,13 @@ def operational_error_handler(_, exc: OperationalError):
     return JSONResponse(status_code=500, content={"detail": "数据库操作失败"})
 
 
+# 处理 _is_mysql_lock_error 相关逻辑。
 def _is_mysql_lock_error(exc: OperationalError) -> bool:
     code = getattr(getattr(exc, "orig", None), "args", [None])[0]
     return code in {1205, 1213}
 
 
+# 处理 health 相关逻辑。
 @app.get("/health")
 def health():
     return {"status": "ok", "app": settings.app_name}

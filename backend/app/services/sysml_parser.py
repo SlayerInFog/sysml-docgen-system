@@ -1,4 +1,4 @@
-import json
+﻿import json
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -47,6 +47,7 @@ RELATION_KEYS = (
 )
 
 
+# 根据文件类型选择模型解析方式。
 def parse_model_file(path: Path) -> ParsedModel:
     suffix = path.suffix.lower()
     text = path.read_text(encoding="utf-8", errors="ignore")
@@ -60,6 +61,7 @@ def parse_model_file(path: Path) -> ParsedModel:
         return parse_xml_model(text)
 
 
+# 解析 JSON 格式的模型数据。
 def parse_json_model(text: str) -> ParsedModel:
     data = json.loads(text)
     candidates: list[dict[str, Any]] = []
@@ -109,11 +111,13 @@ def parse_json_model(text: str) -> ParsedModel:
     return ParsedModel(list(elements.values()), dedupe_relations(relations))
 
 
+# 解析 XML/XMI 格式的模型数据。
 def parse_xml_model(text: str) -> ParsedModel:
     root = ET.fromstring(text)
     elements: dict[str, ParsedElement] = {}
     relations: list[ParsedRelation] = []
 
+    # 处理 visit 相关逻辑。
     def visit(node: ET.Element, parent_uid: str | None = None) -> None:
         attrs = normalize_attrs(node.attrib)
         uid = attrs.get("id") or attrs.get("xmi:id")
@@ -147,6 +151,7 @@ def parse_xml_model(text: str) -> ParsedModel:
     return ParsedModel(list(elements.values()), dedupe_relations(relations))
 
 
+# 递归展开 JSON 模型节点。
 def walk_json(item: dict[str, Any], results: list[dict[str, Any]]) -> None:
     if any(key in item for key in ID_KEYS):
         results.append(item)
@@ -159,6 +164,7 @@ def walk_json(item: dict[str, Any], results: list[dict[str, Any]]) -> None:
                     walk_json(child, results)
 
 
+# 处理 first_value 相关逻辑。
 def first_value(item: dict[str, Any], keys: tuple[str, ...]) -> Any:
     for key in keys:
         if key in item and item[key] not in (None, ""):
@@ -166,6 +172,7 @@ def first_value(item: dict[str, Any], keys: tuple[str, ...]) -> Any:
     return None
 
 
+# 处理 stringify 相关逻辑。
 def stringify(value: Any) -> str | None:
     if value is None:
         return None
@@ -174,6 +181,7 @@ def stringify(value: Any) -> str | None:
     return str(value)
 
 
+# 处理 infer_type 相关逻辑。
 def infer_type(item: dict[str, Any]) -> str:
     if "appliedStereotypeIds" in item:
         return "StereotypedElement"
@@ -182,6 +190,7 @@ def infer_type(item: dict[str, Any]) -> str:
     return "Element"
 
 
+# 处理 simplify_type 相关逻辑。
 def simplify_type(value: str) -> str:
     value = strip_namespace(value)
     if ":" in value:
@@ -189,10 +198,12 @@ def simplify_type(value: str) -> str:
     return value or "Element"
 
 
+# 处理 strip_namespace 相关逻辑。
 def strip_namespace(value: str) -> str:
     return value.split("}", 1)[-1] if "}" in value else value
 
 
+# 处理 normalize_attrs 相关逻辑。
 def normalize_attrs(attrs: dict[str, str]) -> dict[str, str]:
     normalized = {}
     for key, value in attrs.items():
@@ -202,10 +213,12 @@ def normalize_attrs(attrs: dict[str, str]) -> dict[str, str]:
     return normalized
 
 
+# 处理 split_refs 相关逻辑。
 def split_refs(value: str) -> list[str]:
     return [part.strip("# ") for part in re.split(r"[\s,]+", value) if part.strip("# ")]
 
 
+# 从 JSON 节点中提取关系。
 def relation_from_json(item: dict[str, Any]) -> ParsedRelation | None:
     source = first_value(item, ("source", "sourceId", "clientId", "from"))
     target = first_value(item, ("target", "targetId", "supplierId", "to"))
@@ -219,6 +232,7 @@ def relation_from_json(item: dict[str, Any]) -> ParsedRelation | None:
     return None
 
 
+# 补充元素父子包含关系。
 def add_containment_relations(elements: dict[str, ParsedElement], relations: list[ParsedRelation]) -> None:
     for element in elements.values():
         if element.parent_uid and element.parent_uid in elements:
@@ -232,6 +246,7 @@ def add_containment_relations(elements: dict[str, ParsedElement], relations: lis
             )
 
 
+# 去除重复的模型关系。
 def dedupe_relations(relations: list[ParsedRelation]) -> list[ParsedRelation]:
     seen: set[tuple[str, str, str]] = set()
     result: list[ParsedRelation] = []

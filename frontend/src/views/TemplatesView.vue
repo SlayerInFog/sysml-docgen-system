@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <h1 class="page-title">模板管理</h1>
     <div class="toolbar">
@@ -94,6 +94,7 @@ import {
 const auth = useAuthStore()
 const canWrite = computed(() => auth.canEdit)
 
+// 校验当前用户是否允许写操作。
 function ensureWriteAccess() {
   if (canWrite.value) return true
   ElMessage.warning('读者角色仅可查看，不能执行写操作')
@@ -122,17 +123,20 @@ const form = reactive({
 
 const historyTitle = computed(() => (selectedTemplate.value ? `版本历史 - ${selectedTemplate.value.name}` : '版本历史'))
 
+// 加载页面所需的基础数据。
 async function load() {
   projects.value = await projectApi.list()
   templates.value = await documentApi.templates()
 }
 
+// 打开新建表单弹窗。
 function openCreate() {
   if (!ensureWriteAccess()) return
   resetForm()
   dialog.value = true
 }
 
+// 处理 createDefault 相关逻辑。
 async function createDefault() {
   if (!ensureWriteAccess()) return
   try {
@@ -144,6 +148,7 @@ async function createDefault() {
   }
 }
 
+// 打开编辑弹窗并回填数据。
 function edit(template: Template) {
   if (!ensureWriteAccess()) return
   editingId.value = template.id
@@ -156,10 +161,12 @@ function edit(template: Template) {
   dialog.value = true
 }
 
+// 预览当前内容或记录。
 async function preview(template: Template) {
   await renderPreview(template.content)
 }
 
+// 打开历史版本弹窗。
 async function openHistory(template: Template) {
   selectedTemplate.value = template
   try {
@@ -170,10 +177,12 @@ async function openHistory(template: Template) {
   }
 }
 
+// 处理 previewVersion 相关逻辑。
 async function previewVersion(version: TemplateVersion) {
   await renderPreview(version.content)
 }
 
+// 回滚到指定模型或模板版本。
 async function rollback(version: TemplateVersion) {
   if (!ensureWriteAccess()) return
   if (!selectedTemplate.value || isCurrentVersion(version)) return
@@ -192,10 +201,12 @@ async function rollback(version: TemplateVersion) {
   }
 }
 
+// 处理 isCurrentVersion 相关逻辑。
 function isCurrentVersion(version: TemplateVersion) {
   return Boolean(selectedTemplate.value && version.version === selectedTemplate.value.version)
 }
 
+// 删除指定记录并刷新列表。
 async function remove(template: Template) {
   if (!ensureWriteAccess()) return
   try {
@@ -210,10 +221,12 @@ async function remove(template: Template) {
   }
 }
 
+// 预览当前编辑内容。
 async function previewCurrent() {
   await renderPreview(form.content)
 }
 
+// 渲染模板预览内容。
 async function renderPreview(content: string) {
   try {
     const result = await documentApi.previewTemplate({ content })
@@ -224,6 +237,7 @@ async function renderPreview(content: string) {
   }
 }
 
+// 重置表单到初始状态。
 function resetForm() {
   editingId.value = undefined
   Object.assign(form, {
@@ -234,10 +248,12 @@ function resetForm() {
   })
 }
 
+// 关闭当前表单弹窗。
 function cancelDialog() {
   dialog.value = false
 }
 
+// 保存当前表单数据。
 async function save() {
   if (!ensureWriteAccess()) return
   saving.value = true

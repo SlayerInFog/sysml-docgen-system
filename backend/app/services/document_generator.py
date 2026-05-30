@@ -1,4 +1,4 @@
-from collections import Counter
+﻿from collections import Counter
 from pathlib import Path
 
 from bs4 import BeautifulSoup
@@ -77,6 +77,7 @@ DEFAULT_TEMPLATE = """<!doctype html>
 MAX_OFFICE_TABLE_ROWS = 300
 
 
+# 用模板和模型数据渲染 HTML 文档。
 def render_document_html(
     db: Session,
     model: SysMLModel,
@@ -103,6 +104,7 @@ def render_document_html(
     return Template(template_content or DEFAULT_TEMPLATE).render(**context)
 
 
+# 将 HTML 内容转换为 DOCX 文件。
 def html_to_docx(html: str, output_path: Path) -> None:
     soup = BeautifulSoup(html, "html.parser")
     doc = Document()
@@ -140,6 +142,7 @@ def html_to_docx(html: str, output_path: Path) -> None:
     doc.save(output_path)
 
 
+# 将 HTML 内容转换为 PDF 文件。
 def html_to_pdf(html: str, output_path: Path) -> None:
     soup = BeautifulSoup(html, "html.parser")
     story = []
@@ -162,6 +165,7 @@ def html_to_pdf(html: str, output_path: Path) -> None:
     SimpleDocTemplate(str(output_path), pagesize=A4).build(story)
 
 
+# 处理 export_model_docx_summary 相关逻辑。
 def export_model_docx_summary(db: Session, doc_record: GeneratedDocument, output_path: Path, max_rows: int = 300) -> None:
     elements = (
         db.query(ModelElement)
@@ -210,6 +214,7 @@ def export_model_docx_summary(db: Session, doc_record: GeneratedDocument, output
     document.save(output_path)
 
 
+# 处理 export_model_pdf_summary 相关逻辑。
 def export_model_pdf_summary(db: Session, doc_record: GeneratedDocument, output_path: Path, max_rows: int = 120) -> None:
     elements = (
         db.query(ModelElement)

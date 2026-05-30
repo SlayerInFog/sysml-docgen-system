@@ -1,4 +1,4 @@
-import json
+﻿import json
 from typing import Any
 from uuid import uuid4
 
@@ -33,19 +33,23 @@ from app.services.versioning import sync_model_branch_head
 router = APIRouter(prefix="/openmbee", tags=["OpenMBEE接口适配"])
 
 
+# 处理 get_client 相关逻辑。
 def get_client() -> OpenMbeeMmsClient:
     settings = get_settings()
     return OpenMbeeMmsClient(settings.openmbee_mms_url, settings.openmbee_mms_token)
 
 
+# 处理 proxy_response 相关逻辑。
 def proxy_response(source_url: str, data: Any) -> OpenMbeeProxyResponse:
     return OpenMbeeProxyResponse(source_url=source_url, data=data)
 
 
+# 处理 translate_openmbee_error 相关逻辑。
 def translate_openmbee_error(error: OpenMbeeClientError) -> HTTPException:
     return HTTPException(status_code=error.status_code, detail=str(error))
 
 
+# 返回 OpenMBEE 适配配置状态。
 @router.get("/config", response_model=OpenMbeeConfigOut)
 def openmbee_config(_: User = Depends(get_current_user)) -> OpenMbeeConfigOut:
     settings = get_settings()
@@ -57,11 +61,13 @@ def openmbee_config(_: User = Depends(get_current_user)) -> OpenMbeeConfigOut:
     )
 
 
+# 返回保留的 MMS 接口目录。
 @router.get("/mms/endpoints", response_model=list[OpenMbeeEndpointOut])
 def mms_endpoints(_: User = Depends(get_current_user)) -> list[OpenMbeeEndpointOut]:
     return [OpenMbeeEndpointOut(**endpoint.__dict__) for endpoint in endpoint_catalog()]
 
 
+# 代理查询 MMS 版本信息。
 @router.get("/mms/version", response_model=OpenMbeeProxyResponse)
 def mms_version(_: User = Depends(require_roles("admin", "author"))) -> OpenMbeeProxyResponse:
     client = get_client()
@@ -72,6 +78,7 @@ def mms_version(_: User = Depends(require_roles("admin", "author"))) -> OpenMbee
         raise translate_openmbee_error(error) from error
 
 
+# 代理查询 MMS 项目列表。
 @router.get("/mms/projects", response_model=OpenMbeeProxyResponse)
 def mms_projects(
     org_id: str | None = None,
@@ -85,6 +92,7 @@ def mms_projects(
         raise translate_openmbee_error(error) from error
 
 
+# 代理查询 MMS 分支列表。
 @router.get("/mms/projects/{project_id}/refs", response_model=OpenMbeeProxyResponse)
 def mms_refs(project_id: str, _: User = Depends(require_roles("admin", "author"))) -> OpenMbeeProxyResponse:
     client = get_client()
@@ -95,6 +103,7 @@ def mms_refs(project_id: str, _: User = Depends(require_roles("admin", "author")
         raise translate_openmbee_error(error) from error
 
 
+# 代理读取 MMS 元素数据。
 @router.get("/mms/projects/{project_id}/refs/{ref_id}/elements/{element_id}", response_model=OpenMbeeProxyResponse)
 def mms_element(
     project_id: str,
@@ -118,6 +127,7 @@ def mms_element(
         raise translate_openmbee_error(error) from error
 
 
+# 代理执行 MMS 搜索。
 @router.get("/mms/projects/{project_id}/refs/{ref_id}/search", response_model=OpenMbeeProxyResponse)
 def mms_search(
     project_id: str,
@@ -136,6 +146,7 @@ def mms_search(
         raise translate_openmbee_error(error) from error
 
 
+# 将 MMS 数据导入为本地模型版本。
 @router.post("/mms/import", response_model=OpenMbeeImportResult, status_code=201)
 def import_mms_model(
     payload: OpenMbeeImportRequest,

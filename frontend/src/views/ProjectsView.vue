@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div>
     <h1 class="page-title">项目管理</h1>
     <div class="toolbar">
@@ -116,15 +116,18 @@ const canManageSelectedMembers = computed(() => {
   return auth.isAdmin || selectedProject.value.owner_id === auth.user.id || currentProjectMember.value?.role === 'manager'
 })
 
+// 加载页面所需的基础数据。
 async function load() {
   projects.value = await projectApi.list()
 }
 
+// 打开新建表单弹窗。
 function openCreate() {
   resetForm()
   dialog.value = true
 }
 
+// 打开编辑弹窗并回填数据。
 function edit(project: Project) {
   if (!canManageProject(project)) return
   editingId.value = project.id
@@ -136,15 +139,18 @@ function edit(project: Project) {
   dialog.value = true
 }
 
+// 重置表单到初始状态。
 function resetForm() {
   editingId.value = undefined
   Object.assign(form, { name: '', code: '', description: '' })
 }
 
+// 关闭当前表单弹窗。
 function cancelDialog() {
   dialog.value = false
 }
 
+// 保存当前表单数据。
 async function save() {
   try {
     if (editingId.value) {
@@ -161,6 +167,7 @@ async function save() {
   }
 }
 
+// 删除指定记录并刷新列表。
 async function remove(project: Project) {
   if (!canDeleteProject(project)) return
   try {
@@ -179,6 +186,7 @@ async function remove(project: Project) {
   }
 }
 
+// 处理 openMembers 相关逻辑。
 async function openMembers(project: Project) {
   selectedProject.value = project
   membersDialog.value = true
@@ -186,36 +194,44 @@ async function openMembers(project: Project) {
   await Promise.all([loadMembers(project.id), loadUserOptions()])
 }
 
+// 处理 loadMembers 相关逻辑。
 async function loadMembers(projectId: number) {
   members.value = await projectApi.members(projectId)
 }
 
+// 处理 loadUserOptions 相关逻辑。
 async function loadUserOptions() {
   users.value = await authApi.userOptions()
 }
 
+// 处理 resetMemberForm 相关逻辑。
 function resetMemberForm() {
   Object.assign(memberForm, { user_id: undefined, role: 'viewer' as EditableProjectRole })
 }
 
+// 处理 canManageProject 相关逻辑。
 function canManageProject(project: Project) {
   if (!auth.user) return false
   return auth.isAdmin || project.owner_id === auth.user.id
 }
 
+// 处理 canDeleteProject 相关逻辑。
 function canDeleteProject(project: Project) {
   if (!auth.user) return false
   return auth.isAdmin || project.owner_id === auth.user.id
 }
 
+// 处理 userById 相关逻辑。
 function userById(userId?: number) {
   return users.value.find((user) => user.id === userId)
 }
 
+// 处理 memberUser 相关逻辑。
 function memberUser(member: ProjectMember) {
   return users.value.find((user) => user.id === member.user_id)
 }
 
+// 处理 canAssignProjectRole 相关逻辑。
 function canAssignProjectRole(userId: number | undefined, role: EditableProjectRole) {
   const user = userById(userId)
   if (!user) return role === 'viewer'
@@ -223,6 +239,7 @@ function canAssignProjectRole(userId: number | undefined, role: EditableProjectR
   return role === 'manager' || role === 'editor' || role === 'viewer'
 }
 
+// 处理 canAssignMemberRole 相关逻辑。
 function canAssignMemberRole(member: ProjectMember, role: EditableProjectRole) {
   const user = memberUser(member)
   if (!user) return role === 'viewer'
@@ -230,12 +247,14 @@ function canAssignMemberRole(member: ProjectMember, role: EditableProjectRole) {
   return role === 'manager' || role === 'editor' || role === 'viewer'
 }
 
+// 处理 handleMemberUserChange 相关逻辑。
 function handleMemberUserChange() {
   if (!canAssignProjectRole(memberForm.user_id, memberForm.role)) {
     memberForm.role = 'viewer'
   }
 }
 
+// 处理 addMember 相关逻辑。
 async function addMember() {
   if (!canManageSelectedMembers.value) return
   if (!selectedProject.value || !memberForm.user_id) {
@@ -255,6 +274,7 @@ async function addMember() {
   }
 }
 
+// 处理 updateMember 相关逻辑。
 async function updateMember(member: ProjectMember) {
   if (!canManageSelectedMembers.value) return
   if (!selectedProject.value || member.role === 'owner') return
@@ -274,6 +294,7 @@ async function updateMember(member: ProjectMember) {
   }
 }
 
+// 处理 removeMember 相关逻辑。
 async function removeMember(member: ProjectMember) {
   if (!canManageSelectedMembers.value) return
   if (!selectedProject.value) return
