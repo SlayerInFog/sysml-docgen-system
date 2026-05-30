@@ -2,8 +2,8 @@
   <div>
     <h1 class="page-title">模板管理</h1>
     <div class="toolbar">
-      <el-button type="primary" @click="createDefault">生成默认模板</el-button>
-      <el-button @click="openCreate">新建模板</el-button>
+      <el-button v-if="canWrite" type="primary" @click="createDefault">生成默认模板</el-button>
+      <el-button v-if="canWrite" @click="openCreate">新建模板</el-button>
       <el-button @click="load">刷新</el-button>
     </div>
 
@@ -18,16 +18,16 @@
       <el-table-column label="操作" width="320" fixed="right" class-name="table-actions-cell">
         <template #default="{ row }">
           <div class="table-actions">
-            <el-button text type="primary" @click="edit(row)">编辑</el-button>
+            <el-button v-if="canWrite" text type="primary" @click="edit(row)">编辑</el-button>
             <el-button text @click="preview(row)">预览</el-button>
             <el-button text @click="openHistory(row)">历史</el-button>
-            <el-button text type="danger" @click="remove(row)">删除</el-button>
+            <el-button v-if="canWrite" text type="danger" @click="remove(row)">删除</el-button>
           </div>
         </template>
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="dialog" :title="editingId ? '编辑模板' : '新建模板'" width="920px" @closed="resetForm">
+    <el-dialog v-if="canWrite" v-model="dialog" :title="editingId ? '编辑模板' : '新建模板'" width="920px" @closed="resetForm">
       <el-form label-position="top">
         <el-form-item label="所属项目">
           <el-select v-model="form.project_id" clearable placeholder="不选择则作为全局模板">
@@ -69,7 +69,7 @@
             <div class="table-actions">
               <el-button text @click="previewVersion(row)">预览</el-button>
               <el-tag v-if="isCurrentVersion(row)" size="small" type="success">当前版本</el-tag>
-              <el-button v-else text type="primary" @click="rollback(row)">回滚</el-button>
+              <el-button v-else-if="canWrite" text type="primary" @click="rollback(row)">回滚</el-button>
             </div>
           </template>
         </el-table-column>
@@ -82,6 +82,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError } from '@/api/http'
+import { useAuthStore } from '@/stores/auth'
 import {
   documentApi,
   projectApi,
@@ -89,6 +90,15 @@ import {
   type Template,
   type TemplateVersion,
 } from '@/api'
+
+const auth = useAuthStore()
+const canWrite = computed(() => auth.canEdit)
+
+function ensureWriteAccess() {
+  if (canWrite.value) return true
+  ElMessage.warning('读者角色仅可查看，不能执行写操作')
+  return false
+}
 
 const DEFAULT_CONTENT =
   '<h1>{{ title }}</h1><p>模型：{{ model.name }}</p>{% for element in elements %}<p>{{ element.name }} - {{ element.type }}</p>{% endfor %}'
@@ -118,11 +128,13 @@ async function load() {
 }
 
 function openCreate() {
+  if (!ensureWriteAccess()) return
   resetForm()
   dialog.value = true
 }
 
 async function createDefault() {
+  if (!ensureWriteAccess()) return
   try {
     await documentApi.createDefaultTemplate()
     ElMessage.success('默认模板已创建')
@@ -133,6 +145,7 @@ async function createDefault() {
 }
 
 function edit(template: Template) {
+  if (!ensureWriteAccess()) return
   editingId.value = template.id
   Object.assign(form, {
     project_id: template.project_id,
@@ -162,6 +175,7 @@ async function previewVersion(version: TemplateVersion) {
 }
 
 async function rollback(version: TemplateVersion) {
+  if (!ensureWriteAccess()) return
   if (!selectedTemplate.value || isCurrentVersion(version)) return
   try {
     await ElMessageBox.confirm(`回滚到版本 ${version.version}？当前内容会作为新版本保留。`, '确认回滚', {
@@ -183,6 +197,7 @@ function isCurrentVersion(version: TemplateVersion) {
 }
 
 async function remove(template: Template) {
+  if (!ensureWriteAccess()) return
   try {
     await ElMessageBox.confirm(`删除模板“${template.name}”？历史版本会一并删除。`, '确认删除', { type: 'warning' })
     await documentApi.removeTemplate(template.id)
@@ -224,6 +239,7 @@ function cancelDialog() {
 }
 
 async function save() {
+  if (!ensureWriteAccess()) return
   saving.value = true
   try {
     if (editingId.value) {

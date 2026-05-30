@@ -18,6 +18,11 @@ from app.services.audit import write_log
 
 router = APIRouter(prefix="/projects", tags=["项目管理"])
 PROJECT_MEMBER_ROLES = {"manager", "editor", "viewer"}
+USER_PROJECT_ROLE_LIMITS = {
+    "reader": {"viewer"},
+    "author": {"manager", "editor", "viewer"},
+    "admin": {"manager", "editor", "viewer"},
+}
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
@@ -143,6 +148,7 @@ def add_project_member(
         raise HTTPException(status_code=404, detail="User not found")
     if target_user.id == project.owner_id:
         raise HTTPException(status_code=400, detail="Project owner is already a member")
+    validate_project_role_for_user(target_user, payload.role)
     member = db.query(ProjectMember).filter(ProjectMember.project_id == project_id, ProjectMember.user_id == target_user.id).first()
     if member:
         raise HTTPException(status_code=400, detail="User is already a project member")
@@ -168,6 +174,7 @@ def update_project_member(
     member = db.query(ProjectMember).filter(ProjectMember.id == member_id, ProjectMember.project_id == project_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="Project member not found")
+    validate_project_role_for_user(member.user, payload.role)
     member.role = payload.role
     db.commit()
     db.refresh(member)
@@ -207,7 +214,11 @@ def has_project_role(db: Session, project_id: int, user: User, roles: set[str] |
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         return False
-    if user.role == "admin" or project.owner_id == user.id:
+    if user.role == "admin":
+        return True
+    if user.role == "reader" and roles and roles.intersection({"manager", "editor"}):
+        return False
+    if project.owner_id == user.id:
         return True
     query = db.query(ProjectMember).filter(ProjectMember.project_id == project_id, ProjectMember.user_id == user.id)
     if roles:
@@ -225,6 +236,12 @@ def ensure_project_manage_access(db: Session, project_id: int, user: User) -> Pr
     if not member or member.role != "manager":
         raise HTTPException(status_code=403, detail="Permission denied")
     return project
+
+
+def validate_project_role_for_user(user: User, project_role: str) -> None:
+    allowed_roles = USER_PROJECT_ROLE_LIMITS.get(user.role, {"viewer"})
+    if project_role not in allowed_roles:
+        raise HTTPException(status_code=400, detail="该用户全局角色不允许授予此项目角色")
 
 
 def _member_out(member: ProjectMember) -> ProjectMemberOut:

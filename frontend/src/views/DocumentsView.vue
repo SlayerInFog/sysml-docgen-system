@@ -3,7 +3,7 @@
     <h1 class="page-title">文档生成</h1>
     <el-card>
       <template #header>生成配置</template>
-      <el-form class="generate-form" label-position="top">
+      <el-form v-if="canWrite" class="generate-form" label-position="top">
         <div class="generate-fields">
           <el-form-item label="项目">
             <el-select v-model="form.project_id" @change="loadRelated">
@@ -26,6 +26,7 @@
           <el-button type="primary" :loading="generating" @click="generate">生成文档</el-button>
         </div>
       </el-form>
+      <el-empty v-else description="读者角色仅可查看和导出已生成文档" />
     </el-card>
 
     <el-card style="margin-top: 18px">
@@ -47,7 +48,7 @@
           <template #default="{ row }">
             <div class="table-actions">
               <el-button size="small" type="primary" text @click="preview(row)">预览</el-button>
-              <el-button size="small" type="danger" text @click="remove(row)">删除</el-button>
+              <el-button v-if="canWrite" size="small" type="danger" text @click="remove(row)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -62,10 +63,20 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError } from '@/api/http'
+import { useAuthStore } from '@/stores/auth'
 import { documentApi, modelApi, projectApi, type GeneratedDocument, type Project, type SysMLModel, type Template } from '@/api'
+
+const auth = useAuthStore()
+const canWrite = computed(() => auth.canEdit)
+
+function ensureWriteAccess() {
+  if (canWrite.value) return true
+  ElMessage.warning('读者角色仅可查看，不能执行写操作')
+  return false
+}
 
 const projects = ref<Project[]>([])
 const models = ref<SysMLModel[]>([])
@@ -101,6 +112,7 @@ async function loadRelated() {
 }
 
 async function generate() {
+  if (!ensureWriteAccess()) return
   if (!form.project_id || !form.model_id || !form.template_id || !form.title) {
     ElMessage.warning('请完整选择项目、模型、模板并填写标题')
     return
@@ -128,6 +140,7 @@ function preview(row: GeneratedDocument) {
 }
 
 async function remove(row: GeneratedDocument) {
+  if (!ensureWriteAccess()) return
   try {
     await ElMessageBox.confirm(`删除文档“${row.title}”？`, '确认删除', { type: 'warning' })
     await documentApi.remove(row.id)

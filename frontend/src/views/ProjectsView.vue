@@ -2,7 +2,7 @@
   <div>
     <h1 class="page-title">项目管理</h1>
     <div class="toolbar">
-      <el-button type="primary" @click="openCreate">新建项目</el-button>
+      <el-button v-if="auth.canEdit" type="primary" @click="openCreate">新建项目</el-button>
       <el-button @click="load">刷新</el-button>
     </div>
     <el-table :data="projects" stripe>
@@ -13,9 +13,9 @@
       <el-table-column label="操作" width="250" class-name="table-actions-cell">
         <template #default="{ row }">
           <div class="table-actions">
-            <el-button text type="primary" @click="edit(row)">编辑</el-button>
+            <el-button v-if="canManageProject(row)" text type="primary" @click="edit(row)">编辑</el-button>
             <el-button text type="primary" @click="openMembers(row)">成员</el-button>
-            <el-button text type="danger" @click="remove(row)">删除</el-button>
+            <el-button v-if="canDeleteProject(row)" text type="danger" @click="remove(row)">删除</el-button>
           </div>
         </template>
       </el-table-column>
@@ -36,9 +36,9 @@
     </el-dialog>
 
     <el-dialog v-model="membersDialog" :title="membersTitle" width="760px" @closed="resetMemberForm">
-      <el-form class="member-form" label-position="top">
+      <el-form v-if="canManageSelectedMembers" class="member-form" label-position="top">
         <el-form-item label="用户">
-          <el-select v-model="memberForm.user_id" filterable placeholder="选择启用中的用户">
+          <el-select v-model="memberForm.user_id" filterable placeholder="选择启用中的用户" @change="handleMemberUserChange">
             <el-option
               v-for="user in availableUsers"
               :key="user.id"
@@ -49,8 +49,8 @@
         </el-form-item>
         <el-form-item label="项目角色">
           <el-select v-model="memberForm.role">
-            <el-option label="管理者" value="manager" />
-            <el-option label="编辑者" value="editor" />
+            <el-option label="管理者" value="manager" :disabled="!canAssignProjectRole(memberForm.user_id, 'manager')" />
+            <el-option label="编辑者" value="editor" :disabled="!canAssignProjectRole(memberForm.user_id, 'editor')" />
             <el-option label="查看者" value="viewer" />
           </el-select>
         </el-form-item>
@@ -66,9 +66,9 @@
         <el-table-column label="项目角色" width="170">
           <template #default="{ row }">
             <el-tag v-if="row.role === 'owner'" type="warning">负责人</el-tag>
-            <el-select v-else v-model="row.role" size="small" @change="updateMember(row)">
-              <el-option label="管理者" value="manager" />
-              <el-option label="编辑者" value="editor" />
+            <el-select v-else v-model="row.role" size="small" :disabled="!canManageSelectedMembers" @change="updateMember(row)">
+              <el-option label="管理者" value="manager" :disabled="!canAssignMemberRole(row, 'manager')" />
+              <el-option label="编辑者" value="editor" :disabled="!canAssignMemberRole(row, 'editor')" />
               <el-option label="查看者" value="viewer" />
             </el-select>
           </template>
@@ -76,7 +76,7 @@
         <el-table-column label="操作" width="100" class-name="table-actions-cell">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button v-if="row.role !== 'owner'" text type="danger" @click="removeMember(row)">移除</el-button>
+              <el-button v-if="row.role !== 'owner' && canManageSelectedMembers" text type="danger" @click="removeMember(row)">移除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -90,6 +90,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { apiError } from '@/api/http'
 import { authApi, projectApi, type Project, type ProjectMember, type User } from '@/api'
+import { useAuthStore } from '@/stores/auth'
 
 type EditableProjectRole = 'manager' | 'editor' | 'viewer'
 
@@ -102,11 +103,17 @@ const editingId = ref<number>()
 const selectedProject = ref<Project>()
 const form = reactive({ name: '', code: '', description: '' })
 const memberForm = reactive<{ user_id?: number; role: EditableProjectRole }>({ user_id: undefined, role: 'viewer' })
+const auth = useAuthStore()
 
 const membersTitle = computed(() => (selectedProject.value ? `项目成员：${selectedProject.value.name}` : '项目成员'))
 const availableUsers = computed(() => {
   const memberUserIds = new Set(members.value.map((item) => item.user_id))
   return users.value.filter((user) => !memberUserIds.has(user.id))
+})
+const currentProjectMember = computed(() => members.value.find((item) => item.user_id === auth.user?.id))
+const canManageSelectedMembers = computed(() => {
+  if (!selectedProject.value || !auth.user) return false
+  return auth.isAdmin || selectedProject.value.owner_id === auth.user.id || currentProjectMember.value?.role === 'manager'
 })
 
 async function load() {
@@ -119,6 +126,7 @@ function openCreate() {
 }
 
 function edit(project: Project) {
+  if (!canManageProject(project)) return
   editingId.value = project.id
   Object.assign(form, {
     name: project.name,
@@ -154,6 +162,7 @@ async function save() {
 }
 
 async function remove(project: Project) {
+  if (!canDeleteProject(project)) return
   try {
     await ElMessageBox.confirm(
       `删除项目“${project.name}”会同时删除其模型、模板和生成文档，是否继续？`,
@@ -189,7 +198,46 @@ function resetMemberForm() {
   Object.assign(memberForm, { user_id: undefined, role: 'viewer' as EditableProjectRole })
 }
 
+function canManageProject(project: Project) {
+  if (!auth.user) return false
+  return auth.isAdmin || project.owner_id === auth.user.id
+}
+
+function canDeleteProject(project: Project) {
+  if (!auth.user) return false
+  return auth.isAdmin || project.owner_id === auth.user.id
+}
+
+function userById(userId?: number) {
+  return users.value.find((user) => user.id === userId)
+}
+
+function memberUser(member: ProjectMember) {
+  return users.value.find((user) => user.id === member.user_id)
+}
+
+function canAssignProjectRole(userId: number | undefined, role: EditableProjectRole) {
+  const user = userById(userId)
+  if (!user) return role === 'viewer'
+  if (user.role === 'reader') return role === 'viewer'
+  return role === 'manager' || role === 'editor' || role === 'viewer'
+}
+
+function canAssignMemberRole(member: ProjectMember, role: EditableProjectRole) {
+  const user = memberUser(member)
+  if (!user) return role === 'viewer'
+  if (user.role === 'reader') return role === 'viewer'
+  return role === 'manager' || role === 'editor' || role === 'viewer'
+}
+
+function handleMemberUserChange() {
+  if (!canAssignProjectRole(memberForm.user_id, memberForm.role)) {
+    memberForm.role = 'viewer'
+  }
+}
+
 async function addMember() {
+  if (!canManageSelectedMembers.value) return
   if (!selectedProject.value || !memberForm.user_id) {
     ElMessage.warning('请先选择用户')
     return
@@ -208,7 +256,13 @@ async function addMember() {
 }
 
 async function updateMember(member: ProjectMember) {
+  if (!canManageSelectedMembers.value) return
   if (!selectedProject.value || member.role === 'owner') return
+  if (!canAssignMemberRole(member, member.role as EditableProjectRole)) {
+    ElMessage.warning('该用户全局角色不允许授予此项目角色')
+    await loadMembers(selectedProject.value.id)
+    return
+  }
   try {
     const updated = await projectApi.updateMember(selectedProject.value.id, member.id, { role: member.role })
     const index = members.value.findIndex((item) => item.id === updated.id)
@@ -221,6 +275,7 @@ async function updateMember(member: ProjectMember) {
 }
 
 async function removeMember(member: ProjectMember) {
+  if (!canManageSelectedMembers.value) return
   if (!selectedProject.value) return
   try {
     await ElMessageBox.confirm(`从项目中移除“${member.username}”？`, '确认移除', { type: 'warning' })

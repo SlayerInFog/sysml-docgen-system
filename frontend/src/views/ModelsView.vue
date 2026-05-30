@@ -10,7 +10,7 @@
       </template>
       <el-tabs v-model="importSource" class="ingest-tabs" @tab-change="handleImportTabChange">
         <el-tab-pane label="本地文件" name="local">
-          <el-form label-position="top" class="upload-form">
+          <el-form v-if="canWrite" label-position="top" class="upload-form">
             <div class="upload-fields">
               <el-form-item label="所属项目">
                 <el-select v-model="upload.project_id" placeholder="选择项目">
@@ -29,6 +29,7 @@
               <el-button type="primary" :loading="loading" @click="submit">上传并解析</el-button>
             </div>
           </el-form>
+          <el-empty v-else description="读者角色仅可查看已导入模型" />
         </el-tab-pane>
         <el-tab-pane label="OpenMBEE MMS" name="mms">
           <div class="integration-panel">
@@ -41,7 +42,7 @@
                 <el-tag :type="openMbeeConfig?.mms_configured ? 'success' : 'warning'">
                   {{ openMbeeConfig?.mms_configured ? '已配置 MMS' : '未配置 MMS' }}
                 </el-tag>
-                <el-button :disabled="!openMbeeConfig?.mms_configured" :loading="openMbeeTesting" @click="testMmsConnection">
+                <el-button v-if="canWrite" :disabled="!openMbeeConfig?.mms_configured" :loading="openMbeeTesting" @click="testMmsConnection">
                   测试连接
                 </el-button>
                 <el-button :loading="openMbeeLoading" @click="loadOpenMbeeInfo">刷新</el-button>
@@ -59,7 +60,7 @@
                 {{ openMbeeConfig.doc_convert_configured ? openMbeeConfig.doc_convert_url : '未配置' }}
               </el-descriptions-item>
             </el-descriptions>
-            <el-form label-position="top" class="mms-import-form">
+            <el-form v-if="canWrite" label-position="top" class="mms-import-form">
               <el-form-item label="导入到本地项目">
                 <el-select v-model="mmsImportForm.local_project_id" placeholder="选择本地项目">
                   <el-option v-for="project in projects" :key="project.id" :label="project.name" :value="project.id" />
@@ -122,6 +123,12 @@
               </div>
             </el-form>
             <el-alert
+              v-else
+              type="info"
+              :closable="false"
+              title="读者角色仅可查看 OpenMBEE 接口目录，不能测试连接或导入模型。"
+            />
+            <el-alert
               v-if="mmsImportResult"
               type="success"
               :closable="false"
@@ -134,7 +141,7 @@
             </el-table>
           </div>
         </el-tab-pane>
-        <el-tab-pane label="Jupyter 实验台" name="jupyter">
+        <el-tab-pane v-if="canWrite" label="Jupyter 实验台" name="jupyter">
           <div class="integration-panel">
             <div class="integration-summary">
               <div>
@@ -176,7 +183,7 @@
           <template #default="{ row }">{{ statusLabel(row.status) }}</template>
         </el-table-column>
         <el-table-column prop="created_at" label="上传时间" />
-        <el-table-column label="操作" width="150" fixed="right" class-name="table-actions-cell">
+        <el-table-column v-if="canWrite" label="操作" width="150" fixed="right" class-name="table-actions-cell">
           <template #default="{ row }">
             <div class="table-actions">
               <el-button text type="primary" @click.stop="editModel(row)">编辑</el-button>
@@ -187,7 +194,7 @@
       </el-table>
     </el-card>
 
-    <el-card style="margin-top: 18px">
+    <el-card v-if="canWrite" style="margin-top: 18px">
       <template #header>
         <div class="card-header">
           <span>模型版本分支 / 标签 / 回滚</span>
@@ -294,7 +301,7 @@
             <el-table-column prop="name" label="名称" />
             <el-table-column prop="type" label="类型" width="140" />
             <el-table-column prop="documentation" label="说明" />
-            <el-table-column label="操作" width="90" class-name="table-actions-cell">
+            <el-table-column v-if="canWrite" label="操作" width="90" class-name="table-actions-cell">
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button text type="primary" @click.stop="editElement(row)">编辑</el-button>
@@ -319,7 +326,7 @@
               <span>元素关系</span>
               <div class="table-actions">
                 <span class="muted">{{ visibleRelations.length }} / {{ relations.length }}</span>
-                <el-button size="small" type="primary" @click="createRelation">新增关系</el-button>
+                <el-button v-if="canWrite" size="small" type="primary" @click="createRelation">新增关系</el-button>
               </div>
             </div>
           </template>
@@ -338,7 +345,7 @@
               <template #default="{ row }">{{ elementName(row.target_uid) }}</template>
             </el-table-column>
             <el-table-column prop="label" label="标签" width="100" />
-            <el-table-column label="操作" width="120" class-name="table-actions-cell">
+            <el-table-column v-if="canWrite" label="操作" width="120" class-name="table-actions-cell">
               <template #default="{ row }">
                 <div class="table-actions">
                   <el-button text type="primary" @click.stop="editRelation(row)">编辑</el-button>
@@ -491,7 +498,7 @@
                 <template #default="{ row }">{{ relationPeerName(row) }}</template>
               </el-table-column>
             </el-table>
-            <el-button type="primary" style="margin-top: 12px" @click="editElement(selectedElement)">编辑说明</el-button>
+            <el-button v-if="canWrite" type="primary" style="margin-top: 12px" @click="editElement(selectedElement)">编辑说明</el-button>
           </div>
           <el-empty v-else description="从表格、树或图中选择元素" />
         </el-card>
@@ -543,7 +550,7 @@
       <el-empty v-else description="选择同项目模型版本后可查看差异" />
     </el-card>
 
-    <el-dialog v-model="modelDialog" title="编辑模型" width="560px" @closed="resetModelForm">
+    <el-dialog v-if="canWrite" v-model="modelDialog" title="编辑模型" width="560px" @closed="resetModelForm">
       <el-form label-position="top">
         <el-form-item label="模型名称"><el-input v-model="modelForm.name" /></el-form-item>
         <el-form-item label="模型说明"><el-input v-model="modelForm.description" type="textarea" :rows="4" /></el-form-item>
@@ -554,7 +561,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="editDialog" title="轻量编辑模型元素" width="560px">
+    <el-dialog v-if="canWrite" v-model="editDialog" title="轻量编辑模型元素" width="560px">
       <el-form v-if="editing" label-position="top">
         <el-form-item label="名称"><el-input v-model="editing.name" /></el-form-item>
         <el-form-item label="说明"><el-input v-model="editing.documentation" type="textarea" :rows="5" /></el-form-item>
@@ -565,7 +572,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="relationDialog" :title="editingRelationId ? '编辑模型关系' : '新增模型关系'" width="620px" @closed="resetRelationForm">
+    <el-dialog v-if="canWrite" v-model="relationDialog" :title="editingRelationId ? '编辑模型关系' : '新增模型关系'" width="620px" @closed="resetRelationForm">
       <el-form label-position="top">
         <el-form-item label="源元素">
           <el-select v-model="relationForm.source_uid" filterable placeholder="选择源元素" class="wide">
@@ -594,6 +601,7 @@ import type { TabsPaneContext, TreeInstance } from 'element-plus'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Aim, RefreshLeft, ZoomIn, ZoomOut } from '@element-plus/icons-vue'
 import { apiError } from '@/api/http'
+import { useAuthStore } from '@/stores/auth'
 import {
   modelApi,
   openMbeeApi,
@@ -611,6 +619,15 @@ import {
   type VersionRollbackRecord,
   type VersionTag,
 } from '@/api'
+
+const auth = useAuthStore()
+const canWrite = computed(() => auth.canEdit)
+
+function ensureWriteAccess() {
+  if (canWrite.value) return true
+  ElMessage.warning('读者角色仅可查看，不能执行写操作')
+  return false
+}
 
 interface ElementTreeNode {
   uid: string
@@ -1152,6 +1169,7 @@ async function loadOpenMbeeInfo() {
 }
 
 async function testMmsConnection() {
+  if (!ensureWriteAccess()) return
   openMbeeTesting.value = true
   try {
     await openMbeeApi.mmsVersion()
@@ -1164,6 +1182,7 @@ async function testMmsConnection() {
 }
 
 async function loadMmsProjects() {
+  if (!ensureWriteAccess()) return
   mmsProjectsLoading.value = true
   try {
     const result = await openMbeeApi.projects()
@@ -1177,6 +1196,7 @@ async function loadMmsProjects() {
 }
 
 async function loadMmsRefs() {
+  if (!ensureWriteAccess()) return
   if (!mmsImportForm.mms_project_id) return
   mmsRefsLoading.value = true
   try {
@@ -1191,6 +1211,7 @@ async function loadMmsRefs() {
 }
 
 async function importFromMms() {
+  if (!ensureWriteAccess()) return
   if (!mmsImportForm.local_project_id || !mmsImportForm.name.trim() || !mmsImportForm.mms_project_id || !mmsImportForm.ref_id) {
     ElMessage.warning('请填写本地项目、模型名称、MMS 项目和分支')
     return
@@ -1238,6 +1259,7 @@ async function load() {
 }
 
 async function submit() {
+  if (!ensureWriteAccess()) return
   if (!upload.project_id || !upload.name || !file.value) {
     ElMessage.warning('请填写项目、模型名称并选择文件')
     return
@@ -1286,6 +1308,7 @@ async function loadModelVersioning() {
 }
 
 async function createBranch() {
+  if (!ensureWriteAccess()) return
   if (!versionProjectId.value || !branchForm.name.trim()) {
     ElMessage.warning('请选择项目并填写分支名称')
     return
@@ -1316,11 +1339,13 @@ function selectBranch(row: VersionBranch) {
 }
 
 function prepareTag(row: VersionBranch) {
+  if (!ensureWriteAccess()) return
   tagForm.branch_id = row.id
   tagForm.model_id = row.head_model_id
 }
 
 async function renameBranch(row: VersionBranch) {
+  if (!ensureWriteAccess()) return
   try {
     const result = await ElMessageBox.prompt('请输入新的分支名称', '重命名分支', {
       inputValue: row.name,
@@ -1341,6 +1366,7 @@ async function renameBranch(row: VersionBranch) {
 }
 
 async function deleteBranch(row: VersionBranch) {
+  if (!ensureWriteAccess()) return
   try {
     await ElMessageBox.confirm(`删除分支“${row.name}”？仅没有模型版本、标签和回滚记录的空分支可删除。`, '确认删除', { type: 'warning' })
     await versioningApi.deleteBranch(row.id)
@@ -1361,6 +1387,7 @@ async function deleteBranch(row: VersionBranch) {
 }
 
 async function createTag() {
+  if (!ensureWriteAccess()) return
   if (!versionProjectId.value || !tagForm.name.trim() || !tagForm.model_id) {
     ElMessage.warning('请填写标签名称并选择目标模型')
     return
@@ -1390,6 +1417,7 @@ async function createTag() {
 }
 
 async function rollbackModel() {
+  if (!ensureWriteAccess()) return
   if (!versionProjectId.value || !rollbackForm.branch_id) {
     ElMessage.warning('请选择目标分支')
     return
@@ -1492,6 +1520,7 @@ function openJupyter() {
 }
 
 function editModel(row: SysMLModel) {
+  if (!ensureWriteAccess()) return
   editingModelId.value = row.id
   Object.assign(modelForm, {
     name: row.name,
@@ -1501,6 +1530,7 @@ function editModel(row: SysMLModel) {
 }
 
 async function saveModel() {
+  if (!ensureWriteAccess()) return
   if (!editingModelId.value) return
   try {
     const updated = await modelApi.update(editingModelId.value, {
@@ -1519,6 +1549,7 @@ async function saveModel() {
 }
 
 async function removeModel(row: SysMLModel) {
+  if (!ensureWriteAccess()) return
   try {
     await ElMessageBox.confirm(`删除模型“${row.name}”？模型元素和关系会一并删除。`, '确认删除', { type: 'warning' })
     await modelApi.remove(row.id)
@@ -1566,6 +1597,7 @@ function focusRelation(row: ModelRelation) {
 }
 
 function createRelation() {
+  if (!ensureWriteAccess()) return
   if (!selected.value) return
   resetRelationForm()
   if (selectedElement.value) {
@@ -1575,6 +1607,7 @@ function createRelation() {
 }
 
 function editRelation(row: ModelRelation) {
+  if (!ensureWriteAccess()) return
   editingRelationId.value = row.id
   Object.assign(relationForm, {
     source_uid: row.source_uid,
@@ -1586,6 +1619,7 @@ function editRelation(row: ModelRelation) {
 }
 
 async function saveRelation() {
+  if (!ensureWriteAccess()) return
   if (!selected.value) return
   if (!relationForm.source_uid || !relationForm.target_uid || !relationForm.relation_type.trim()) {
     ElMessage.warning('请选择源元素、目标元素并填写关系类型')
@@ -1610,6 +1644,7 @@ async function saveRelation() {
 }
 
 async function removeRelation(row: ModelRelation) {
+  if (!ensureWriteAccess()) return
   try {
     await ElMessageBox.confirm(`删除关系“${elementName(row.source_uid)} -> ${elementName(row.target_uid)}”？会生成新的模型版本。`, '确认删除', {
       type: 'warning',
@@ -1644,6 +1679,7 @@ function resetRelationForm() {
 }
 
 function editElement(row: ModelElement) {
+  if (!ensureWriteAccess()) return
   selectedElement.value = row
   syncTreeSelection(row.element_uid)
   editing.value = { ...row }
@@ -1651,6 +1687,7 @@ function editElement(row: ModelElement) {
 }
 
 async function saveElement() {
+  if (!ensureWriteAccess()) return
   if (!editing.value) return
   try {
     const updated = await modelApi.updateElement(editing.value.id, {
